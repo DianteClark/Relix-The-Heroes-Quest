@@ -2059,4 +2059,19 @@ export class BattleScene {
   }
 }
 
+// Paint a theme's stage backdrop (sky, motif silhouettes, flagstone floor, side
+// pillars, vignette) onto any canvas, the same painter the battle scene uses.
+// Used by the floor intro and other cinematic beats. Sizes are CSS px.
+export function paintStage(canvas, theme, { width, height, horizon = 0.45, dpr } = {}) {
+  const th = { ...DEFAULT_THEME, ...(theme || {}) };
+  const W = Math.max(1, width || canvas.clientWidth || 400), H = Math.max(1, height || canvas.clientHeight || 300);
+  const painter = Object.create(BattleScene.prototype);
+  Object.assign(painter, {
+    L: { W, bTop: 0, bBot: H, horizon: H * horizon },
+    theme: th, motif: motifOf(th), dpr: dpr ?? Math.min(window.devicePixelRatio || 1, 1.5), $: { bg: canvas },
+  });
+  painter._drawBackdrop();
+  return { motif: painter.motif };
+}
+
 export default BattleScene;
