@@ -321,6 +321,19 @@ async function showBeat(type, d) {
   }
 }
 
+// When anyone plays a card, a mini card pops in under the turn bar so the table sees it.
+function playedToast(p, card) {
+  if (!game || game.speed < 0.05) return;
+  const box = $('#played') || document.body.appendChild(Object.assign(document.createElement('div'), { id: 'played' }));
+  const el = document.createElement('div');
+  el.className = 'played';
+  el.innerHTML = `<div class="pl-card">${treasureCard(card.id)}</div><div class="pl-txt"><b>${esc(p.name)}</b><span>plays ${esc(treasureDef(card.id).name)}</span></div>`;
+  box.appendChild(el);
+  while (box.children.length > 2) box.firstChild.remove();
+  setTimeout(() => el.classList.add('out'), Math.max(1100, 2000 * game.speed));
+  setTimeout(() => el.remove(), Math.max(1500, 2400 * game.speed));
+}
+
 // Floating numbers over heroes on the board (battle scenes show their own).
 function floatAt(pid, text, cls) {
   if (!game || game.speed < 0.05 || battle?.isOpen) return;
@@ -371,6 +384,7 @@ function onEvent(type, d) {
     case 'bossDown': view.fx('relic', game.bossIdx); break;
     case 'draw': view.fx('loot', game.players[d.player].pos); floatAt(d.player, `+${d.cards.length} card${d.cards.length > 1 ? 's' : ''}`, 'loot'); break;
     case 'guilds': sfx('guild'); break;
+    case 'play': playedToast(game.players[d.player], d.card); sfx('card_flip'); break;
   }
   if (['equip', 'play', 'hand', 'draw', 'guilds', 'bossDown', 'respawn', 'revive'].includes(type)) view.syncPlayers(game);
   if (['hand', 'respawn', 'floor', 'move'].includes(type)) view.syncLoot(game);
