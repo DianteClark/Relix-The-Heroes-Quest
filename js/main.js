@@ -555,7 +555,10 @@ onTap($('#btnMenu'), () => {
     <div class="set-row"><span>Swipe to roll dice</span><input type="checkbox" id="mSwipe" ${st.swipeDice !== false ? 'checked' : ''}></div>
     <button class="btn danger" data-m="quit">Quit to Title</button></div>`);
   $('#mSpeed').value = String(game?.speed ?? 0.5);
-  $('#mSpeed').onchange = (e) => { if (game) { game.speed = +e.target.value; if (battle) battle.speed = game.speed; } };
+  $('#mSpeed').onchange = (e) => {
+    if (game) { game.speed = +e.target.value; if (battle) battle.speed = game.speed; }
+    const pr = profile(); pr.settings = { ...(pr.settings || {}), speed: +e.target.value }; mods.profile?.saveProfile?.(pr);
+  };
   $('#mSwipe').onchange = (e) => {
     const pr = profile();
     pr.settings = { ...(pr.settings || {}), swipeDice: e.target.checked };
