@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
+  <title>Relix: The Heroes' Quest</title>
+  <meta name="description" content="A dungeon-crawl board game of relics, monsters, and glory for 1–6 players.">
+  <meta name="theme-color" content="#16121f">
+  <link rel="icon" href="assets/tiles/start.webp">
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <!-- Title -->
+  <section id="title" class="screen active">
+    <div class="title-bg"></div>
+    <div class="title-heroes" id="titleHeroes"></div>
+    <div class="title-box">
+      <h1>RELIX</h1>
+      <h2>The Heroes' Quest</h2>
+      <p>A dungeon crawl of relics, monsters and glory for 1–6 players.</p>
+      <div class="title-buttons">
+        <button class="btn big" id="btnNew">New Game</button>
+        <button class="btn ghost" id="btnRules">How to Play</button>
+        <button class="btn ghost" id="btnGallery">Card Gallery</button>
+      </div>
+      <small class="ver">Prototype v0.1</small>
+    </div>
+  </section>
+
+  <!-- Setup -->
+  <section id="setup" class="screen">
+    <div class="setup-wrap">
+      <header class="setup-head">
+        <button class="btn ghost small" data-back>← Back</button>
+        <h2>Gather Your Party</h2>
+      </header>
+      <h3>Game mode</h3>
+      <div class="modes" id="modes"></div>
+      <h3>Players <small>(1–6 · heroes are unique)</small></h3>
+      <div class="slots" id="slots"></div>
+      <div class="setup-row">
+        <label>Bot speed
+          <select id="speed">
+            <option value="1">Normal</option>
+            <option value="0.5" selected>Fast</option>
+            <option value="0.15">Turbo</option>
+          </select>
+        </label>
+        <button class="btn big" id="btnStart">Begin the Quest</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- Game -->
+  <section id="game" class="screen">
+    <div id="board"></div>
+    <div id="hud">
+      <div id="topbar">
+        <div class="floor"><b id="floorNum">Floor 1</b><span id="floorName"></span></div>
+        <div class="boss-mini" id="bossMini"></div>
+        <div class="top-btns">
+          <button class="icon-btn" id="btnLog" title="Game log">📜</button>
+          <button class="icon-btn" id="btnMenu" title="Menu">☰</button>
+        </div>
+      </div>
+      <div id="players"></div>
+      <div id="combat" class="hidden"></div>
+      <div id="dice" class="hidden"><div class="dice-label"></div><div class="dice-row"></div></div>
+      <div id="toast" class="hidden"></div>
+      <div id="bottom">
+        <div id="prompt" class="hidden"></div>
+        <div id="hand"></div>
+      </div>
+      <aside id="log" class="hidden"><header>Quest log <button class="icon-btn" id="btnLogClose">✕</button></header><div id="logList"></div></aside>
+    </div>
+  </section>
+
+  <!-- End -->
+  <section id="end" class="screen">
+    <div class="end-box" id="endBox"></div>
+  </section>
+
+  <!-- Modals -->
+  <div id="modal" class="hidden"><div class="modal-card" id="modalBody"></div></div>
+
+  <script type="module" src="js/main.js"></script>
+</body>
+</html>
