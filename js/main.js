@@ -41,21 +41,29 @@ window.addEventListener('pointerdown', () => { try { audio.unlock(); } catch { /
 // ---------------- Tap helper ----------------
 // Fires on pointerup if the finger stayed within 16px. Ignores the follow-up
 // synthetic click, so taps never double-fire or get lost to tiny finger drift.
+// Ghost-click guard: after a handled tap, the browser fires a synthetic click
+// ~0-300ms later at the same spot. If the UI changed in between (a new prompt
+// replaced the buttons), that click would hit whatever is now under the finger.
+// We swallow all clicks for a short window after any handled tap.
+let lastTap = 0;
+document.addEventListener('click', (e) => {
+  if (performance.now() - lastTap < 450 && e.isTrusted) { e.stopPropagation(); e.preventDefault(); }
+}, true);
 export function onTap(el, fn) {
   let start = null;
-  el.addEventListener('pointerdown', (e) => { start = { x: e.clientX, y: e.clientY, id: e.pointerId, t: performance.now() }; });
+  el.addEventListener('pointerdown', (e) => { start = { x: e.clientX, y: e.clientY, id: e.pointerId, t: performance.now(), born: el._born || 0 }; });
   el.addEventListener('pointerup', (e) => {
     if (!start || start.id !== e.pointerId) return;
     const ok = Math.hypot(e.clientX - start.x, e.clientY - start.y) < 16;
     start = null;
     if (!ok) return;
-    el._tapped = performance.now();
+    lastTap = performance.now();
     e.preventDefault();
     fn(e);
   });
   el.addEventListener('pointercancel', () => { start = null; });
   el.addEventListener('click', (e) => {
-    if (el._tapped && performance.now() - el._tapped < 600) return; // already handled
+    if (performance.now() - lastTap < 450) return; // tap already handled
     fn(e); // keyboard / accessibility clicks
   });
 }
@@ -199,7 +207,8 @@ async function showBeat(type, d) {
       return flow.turn(p, { human: !p.isBot, guild: game.guildOf(p) });
     case 'cardReveal':
       if (p.isBot && game.speed < 0.2) return;
-      return flow.cards(p, d.cards, { human: !p.isBot, why: d.why });
+      // Only the human whose turn it is sees the faces; everyone else sees card backs.
+      return flow.cards(p, d.cards, { human: !p.isBot, why: d.why, hidden: p.isBot || game.current !== p });
     case 'trapReveal':
       return flow.trap(p, d.card, { human: !p.isBot });
     case 'floorIntro':
@@ -343,26 +352,55 @@ function renderHud() {
     <div class="info"><div class="bn"><b>${b.def.name}</b><small>${b.hp}/${b.maxHp}</small></div>
     <div class="bar boss"><i style="width:${(100 * b.hp) / b.maxHp}%"></i></div>
     <div class="pips">${[1, 2, 3].map((i) => `<i class="${(b.rolls % 3) >= i ? 'on' : ''}"></i>`).join('')}<span>skill</span>${b.minus ? `<em>−${b.minus} dice</em>` : ''}</div></div>`;
-  const chips = game.order.map((id) => {
-    const p = game.players[id];
-    const g = game.guildOf(p);
+  const cur = game.current;
+  const status = (p) => {
     const st = [];
     if (p.skip) st.push(`<i title="Skipping turns">${ICON.hourglass}${p.skip}</i>`);
     if (p.fx.letDown) st.push(`<i title="Let Down">${ICON.heartbreak}</i>`);
     if (p.fx.skillBlocked) st.push(`<i title="Skill blocked">${ICON.blocked}</i>`);
     if (p.fx.doubleBattle) st.push(`<i title="Double Battle">${ICON.swords}</i>`);
-    return `<button class="pchip ${game.current === p ? 'turn' : ''} ${!game.active(p) ? 'out' : ''} ${g ? 'guild' : ''}" data-pid="${p.id}" style="${g ? `--gcol:${g.color}` : ''}">
-      <span class="ph" style="background-image:url(${artUrl(heroDef(p.hero).art)})">${g ? `<span class="gflag">${bannerImg(g.banner || { field: g.color })}</span>` : ''}</span>
-      <span class="pc-body"><span class="nm">${esc(p.name)}${p.isBot ? '<em>BOT</em>' : ''}</span>
-      <span class="bar hp ${hpClass(p)}"><i style="width:${(100 * p.hp) / p.maxHp}%"></i><b>${p.dead ? '—' : p.out ? 'OUT' : p.hp}</b></span>
-      <span class="row"><span class="gemcount">${ICON.gem}${p.relics.length}</span><span class="cc">${ICON.card}${p.hand.length}</span>${st.join('')}</span></span></button>`;
+    return st.join('');
+  };
+  const face = (p) => `background-image:url(${artUrl(heroDef(p.hero).art)})`;
+  const flagOf = (p) => { const g = game.guildOf(p); return g ? `<span class="gflag">${bannerImg(g.banner || { field: g.color })}</span>` : ''; };
+  const hpTxt = (p) => (p.dead ? 'FALLEN' : p.out ? 'OUT' : p.hp);
+  // 1) Turn order: faces only.
+  const order = game.order.map((id, k) => {
+    const p = game.players[id];
+    const g = game.guildOf(p);
+    return `<button class="tface ${cur === p ? 'turn' : ''} ${!game.active(p) ? 'out' : ''}" data-pid="${p.id}" aria-label="${esc(p.name)}" style="${face(p)};${g ? `--gcol:${g.color}` : ''}">${flagOf(p)}${cur === p ? '<i class="tarrow"></i>' : ''}</button>`;
+  }).join('<i class="tsep"></i>');
+  // 2) Everyone but the current player: compact cards down the left.
+  const others = game.order.map((id) => game.players[id]).filter((p) => p !== cur).map((p) => {
+    const g = game.guildOf(p);
+    return `<button class="ochip ${!game.active(p) ? 'out' : ''}" data-pid="${p.id}" style="${g ? `--gcol:${g.color}` : ''}">
+      <span class="ph" style="${face(p)}">${flagOf(p)}</span>
+      <span class="oc-body"><span class="nm">${esc(p.name)}</span>
+      <span class="bar hp ${hpClass(p)}"><i style="width:${(100 * p.hp) / p.maxHp}%"></i><b>${hpTxt(p)}</b></span>
+      <span class="row"><span class="gemcount">${ICON.gem}${p.relics.length}</span><span class="cc">${ICON.card}${p.hand.length}</span>${status(p)}</span></span></button>`;
   }).join('');
-  const html = bossHtml + '|' + chips;
+  // 3) The current player: the big bar at the bottom.
+  let me = '';
+  if (cur) {
+    const g = game.guildOf(cur);
+    const n = cur.hand.length + cur.equipped.length;
+    const canSee = !cur.isBot || !anyHuman();
+    me = `<div class="me ${cur.isBot ? 'bot' : ''}" style="${g ? `--gcol:${g.color}` : ''}">
+      <button class="me-ph" data-pid="${cur.id}" style="${face(cur)}" aria-label="${esc(cur.name)}">${flagOf(cur)}</button>
+      <div class="me-body"><div class="me-top"><b>${esc(cur.name)}</b>${cur.isBot ? '<em>BOT</em>' : ''}${g ? `<span class="me-guild">${esc(g.name)}</span>` : ''}<span class="me-st">${status(cur)}</span></div>
+        <div class="bar hp big ${hpClass(cur)}"><i style="width:${(100 * cur.hp) / cur.maxHp}%"></i><b>${hpTxt(cur)} / ${cur.maxHp}</b></div>
+        <div class="me-row">${gems(cur.relics.length)}</div></div>
+      <button class="me-cards" data-cards="${cur.id}" ${canSee ? '' : 'disabled'} aria-label="Cards"><span class="hb-cards">${Array.from({ length: Math.min(3, n) }, (_, i) => `<i style="--i:${i}"></i>`).join('')}</span><b>${n}</b></button></div>`;
+  }
+  const html = bossHtml + '|' + order + '|' + others + '|' + me;
   if (html !== lastHud) {
     lastHud = html;
     $('#bossMini').innerHTML = bossHtml;
-    $('#players').innerHTML = chips;
-    $$('.pchip').forEach((el) => onTap(el, () => showPlayer(game.players[+el.dataset.pid])));
+    $('#players').innerHTML = order;
+    $('#others').innerHTML = others;
+    $('#me').innerHTML = me;
+    $$('.tface, .ochip, .me-ph').forEach((el) => onTap(el, () => showPlayer(game.players[+el.dataset.pid])));
+    $$('.me-cards').forEach((el) => onTap(el, () => showCards(game.players[+el.dataset.cards])));
   }
   $('#floorNum').textContent = `Floor ${game.floor}`;
   $('#floorName').textContent = b.def.theme.name;
@@ -381,22 +419,14 @@ function renderCombatFallback() {
   } else c.classList.add('hidden');
 }
 
-function renderHandButton() {
-  const p = viewer;
-  const btn = $('#handBtn');
-  if (!p) { btn.classList.add('hidden'); return; }
-  btn.classList.remove('hidden');
-  const n = p.hand.length + p.equipped.length;
-  btn.innerHTML = `<span class="hb-cards">${p.hand.slice(-3).map((c, i) => `<i style="--i:${i}"></i>`).join('')}</span><span><b>${n}</b> ${n === 1 ? 'card' : 'cards'}</span>`;
-}
-onTap($('#handBtn'), () => {
-  const p = viewer;
+function renderHandButton() {}
+function showCards(p) {
   if (!p) return;
   openModal(`<h2>${esc(p.name)}'s cards</h2>
     ${p.equipped.length ? `<h3>Equipped</h3><div class="gallery">${p.equipped.map((c) => treasureCard(c.id)).join('')}</div>` : ''}
     <h3>Hand</h3>${p.hand.length ? `<div class="gallery">${p.hand.map((c) => treasureCard(c.id)).join('')}</div>` : '<p>No cards in hand.</p>'}
     <p class="hint">Cards are played from the prompts when they can be used: at the start of your turn, before a battle roll, or before a PvP roll.</p>`);
-});
+}
 
 function showPlayer(p) {
   const g = game.guildOf(p);
@@ -422,7 +452,7 @@ function humanChoose(p, req) {
     const plain = req.options.filter((o) => !o.card);
     const multiHuman = game.players.filter((q) => !q.isBot).length > 1;
     box.innerHTML = `${multiHuman ? `<div class="who" style="--gcol:${p.banner?.field || '#f2c443'}">${esc(p.name)}</div>` : ''}<h4>${esc(req.title)}</h4>${req.text ? `<p>${esc(req.text)}</p>` : ''}
-      ${req.kind === 'move' ? '<p class="hint">Tap a glowing tile or a button.</p>' : ''}
+      ${req.kind === 'move' ? '<p class="hint">Tap a glowing tile or a button.</p>' : req.options.some((o) => o.player != null) ? '<p class="hint">Tap a player below or their glowing tile.</p>' : ''}
       ${cardOpts.length ? `<div class="opt-cards">${cardOpts.map((o) => `<button class="opt-card" data-o="${o.id}" aria-label="${esc(o.label)}">${treasureCard(o.card.id)}<span>${esc(o.label)}</span></button>`).join('')}</div>` : ''}
       <div class="opts">${plain.map((o) => `<button class="opt ${o.primary ? 'primary' : ''}" data-o="${o.id}">${esc(o.label)}${o.desc ? `<small>${esc(o.desc)}</small>` : ''}</button>`).join('')}</div>`;
     box.classList.remove('hidden');
@@ -443,6 +473,15 @@ function humanChoose(p, req) {
     if (req.kind === 'move') {
       view.highlight(req.options.map((o) => o.dest), (tileIdx) => {
         const o = req.options.find((x) => x.dest === tileIdx);
+        if (o) finish(o.id);
+      });
+    }
+    // Choosing a player: their tiles glow too, so you can tap them on the board.
+    const targets = req.options.filter((o) => o.player != null);
+    if (targets.length && req.kind !== 'move') {
+      const tiles = [...new Set(targets.map((o) => game.players[o.player].pos))];
+      view.highlight(tiles, (tileIdx) => {
+        const o = targets.find((x) => game.players[x.player].pos === tileIdx);
         if (o) finish(o.id);
       });
     }

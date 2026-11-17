@@ -65,8 +65,9 @@ export class Flow {
     await this.remove(el);
   }
 
-  async cards(p, cards, { human, why } = {}) {
+  async cards(p, cards, { human, why, hidden } = {}) {
     if (!cards.length) return;
+    if (hidden) return this.hiddenCards(p, cards.length, why);
     const sp = this.speed();
     const el = this.layer('reveal treasure', `
       <div class="rv-title">${esc(p.name)} ${cards.length > 1 ? `draws ${cards.length} treasures` : 'finds a treasure'}${why ? ` <small>${esc(why)}</small>` : ''}</div>
@@ -87,6 +88,17 @@ export class Flow {
     el.classList.add('collect');
     this.sfx('coin');
     await this.remove(el, 420);
+  }
+
+  // Another player's draw: everyone sees that cards were drawn, nobody sees which.
+  async hiddenCards(p, n, why) {
+    const el = this.layer('reveal treasure hidden', `
+      <div class="rv-title">${esc(p.name)} ${n > 1 ? `draws ${n} treasures` : 'draws a treasure'}${why ? ` <small>${esc(why)}</small>` : ''}</div>
+      <div class="rv-cards">${Array.from({ length: n }, (_, i) => `<div class="flip" style="--i:${i}"><div class="flip-in"><div class="flip-face back">${cardBack('Treasure')}</div></div></div>`).join('')}</div>`);
+    this.sfx('card_draw');
+    await sleep(Math.max(500, 1000 * this.speed()));
+    el.classList.add('collect');
+    await this.remove(el, 380);
   }
 
   async trap(p, card, { human } = {}) {
