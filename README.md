@@ -16,7 +16,18 @@ Game design, rules and card art by Diante Clark. Character art was commissioned 
 - Cards rebuilt from the original frame art, in a card gallery and in play.
 - Pets that grow into new forms as bosses fall.
 
-Coming next: online peer-to-peer play.
+### v0.2 "Polish & Juice"
+- **Phones first:** a portrait layout built for phones (iPhone 16 Pro is the reference), using safe areas and large tap targets
+- **Dice:** swipe-to-throw 3D dice with physics. Cosmetic dice skins and throw effects
+- **Battles:** Fire Emblem-style battle scenes with health bars, strikes, crits and kill effects
+- **Cinematics:** turn banners, card flips you tap to collect, floor intros with each boss, a relic-claim scene
+- **Board look:** cel-shaded board with ink outlines, plus particles and fog themed to each floor
+- **Guilds:** guild banners above heroes, a scroll invitation, and guild naming
+- **Menus:** title screen, party setup, Customize (banner editor, dice, throw and kill effects), Shop (Relix Coins), Settings
+- **Sound:** music (CC0, see `assets/audio/CREDITS.md`) and sound effects generated in code
+- **Haptics:** vibration feedback on Android. On iPhone it uses Safari's system tick, which needs iOS 17.4 or later
+
+Coming next: online peer-to-peer play. Test pages for each module are in `dev/`.
 
 ## Rules
 See [RULES.md](RULES.md). It's the exact ruleset the code follows.
