@@ -59,7 +59,12 @@ export function onTap(el, fn) {
   });
 }
 
-function show(id) { $$('.screen').forEach((s) => s.classList.toggle('active', s.id === id)); }
+function show(id) {
+  $$('.screen').forEach((s) => s.classList.toggle('active', s.id === id));
+  document.body.classList.toggle('in-game', id === 'game');
+}
+// The action bar lives on <body> so prompts can rise above battle scenes.
+document.body.appendChild($('#bottom'));
 
 // ---------------- Menus ----------------
 let legacy = null;
@@ -71,7 +76,7 @@ if (mods.menus?.initMenus) {
 }
 function backToTitle() {
   if (mods.menus?.showMenu) { show('title'); mods.menus.showMenu('title'); } else show('title');
-  try { audio.music('title'); } catch { /* ignore */ }
+  try { audio.preload?.(['title', 'menu', 'floor1']); audio.music('title'); } catch { /* ignore */ }
 }
 
 // ---------------- Modal ----------------
@@ -112,6 +117,8 @@ function startGame(config) {
   if (!battle && mods.battle?.BattleScene) battle = new mods.battle.BattleScene();
   game = new Game(config, io);
   window.relix = game;
+  if (battle) battle.speed = game.speed;
+  try { tray?.warmup?.(prof.dice); } catch { /* ignore */ }
   viewer = game.players.find((p) => !p.isBot) || null;
   scheduleHud();
   game.run().then((r) => setTimeout(() => showEnd(r), 900)).catch((e) => { console.error(e); flow.banner(`Error: ${esc(e.message)}`, 'red'); });
@@ -149,7 +156,8 @@ const io = {
         values, kind, mode: swipe ? 'swipe' : 'auto', label: `${p.name} · ${label}`,
         triggers: opts.skill ? heroDef(p.hero).triggers : undefined,
         skin: cos[p.id]?.dice || 'bone', throwFx: cos[p.id]?.throwFx || 'dust',
-        area: battle?.isOpen ? battle.diceArea() : undefined, speed: game.speed,
+        area: battle?.isOpen ? battle.diceArea() : undefined, speed: p.isBot ? game.speed : Math.max(game.speed, 0.6),
+        reducedMotion: !!profile().settings?.reducedMotion,
       });
     } else await legacyDice(p, values, label, opts);
   },
@@ -204,12 +212,11 @@ async function showBeat(type, d) {
       if (!battle?.isOpen) return;
       const e = d.enemy;
       if (d.dealt > 0 || d.hits > 0) {
-        await battle.strike('left', { dmg: d.dealt, crit: d.crits > 0 });
-        battle.setHp('right', Math.max(0, e.hp - d.dealt));
+        await battle.strike('left', { dmg: d.dealt, crit: d.crits > 0, hp: Math.max(0, e.hp - d.dealt) });
         haptics.impact(d.crits > 0 ? 2 : 1);
       } else await battle.strike('left', { dmg: 0, miss: true });
       if (d.taken > 0) {
-        await battle.strike('right', { dmg: d.taken, crit: d.cmiss > 0 });
+        await battle.strike('right', { dmg: d.taken, crit: d.cmiss > 0, hp: Math.max(0, p.hp - d.taken) });
         haptics.impact(d.cmiss > 0 ? 2 : 1);
       }
       return;
@@ -462,7 +469,7 @@ onTap($('#btnMenu'), () => {
     <div class="set-row"><span>Swipe to roll dice</span><input type="checkbox" id="mSwipe" ${st.swipeDice !== false ? 'checked' : ''}></div>
     <button class="btn danger" data-m="quit">Quit to Title</button></div>`);
   $('#mSpeed').value = String(game?.speed ?? 0.5);
-  $('#mSpeed').onchange = (e) => { if (game) game.speed = +e.target.value; };
+  $('#mSpeed').onchange = (e) => { if (game) { game.speed = +e.target.value; if (battle) battle.speed = game.speed; } };
   $('#mSwipe').onchange = (e) => {
     const pr = profile();
     pr.settings = { ...(pr.settings || {}), swipeDice: e.target.checked };
@@ -509,5 +516,5 @@ if (qs.has('demo')) {
     players: HEROES.slice(0, n).map((h, i) => ({ hero: h.id, bot: !(qs.has('human') && i === 0), name: h.short || h.name })),
   });
 } else {
-  try { audio.music('title'); } catch { /* ignore */ }
+  try { audio.preload?.(['title', 'menu', 'floor1']); audio.music('title'); } catch { /* ignore */ }
 }

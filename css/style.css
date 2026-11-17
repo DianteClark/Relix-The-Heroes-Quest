@@ -153,11 +153,14 @@ button { font-family: inherit; }
 .pchip .row i { font-style: normal; }
 .pchip .gemcount { color: var(--gold); }
 
-#bottom { position: absolute; left: 0; right: 0; bottom: 0; pointer-events: none; display: flex; flex-direction: column; align-items: center; gap: 6px;
+#bottom { position: fixed; z-index: 25; left: 0; right: 0; bottom: 0; pointer-events: none; display: flex; flex-direction: column; align-items: center; gap: 6px;
   padding: 0 calc(var(--sr) + 8px) calc(var(--sb) + 8px) calc(var(--sl) + 8px); }
 #bottom > * { pointer-events: auto; }
 #ticker { pointer-events: none !important; max-width: min(560px, 94vw); font: 800 12px var(--ui); color: rgba(255,255,255,.82); text-align: center; text-shadow: 0 1px 3px #000; padding: 4px 10px; background: rgba(8,5,14,.45); border-radius: 10px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 body.prompting #ticker { display: none; }
+body:not(.in-game) #bottom { display: none; }
+body.prompting #bottom { z-index: 45; }
+#bottom { --sb: env(safe-area-inset-bottom, 0px); --sl: env(safe-area-inset-left, 0px); --sr: env(safe-area-inset-right, 0px); }
 #prompt { width: min(560px, 100%); background: linear-gradient(rgba(34,24,48,.97), rgba(22,16,32,.97)); border: 2px solid var(--gold); border-radius: 20px; padding: 12px; box-shadow: 0 -6px 30px rgba(0,0,0,.55), inset 0 1px 0 rgba(255,255,255,.08); animation: pop .22s cubic-bezier(.2,1.4,.4,1); }
 @keyframes pop { from { transform: translateY(24px); opacity: 0; } }
 #prompt .who { display: inline-block; font: 900 11px var(--ui); color: #120a04; background: var(--gcol); padding: 2px 8px; border-radius: 6px; margin-bottom: 4px; }
