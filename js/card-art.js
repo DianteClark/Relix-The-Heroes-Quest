@@ -44,6 +44,17 @@ const rock = (x, y, s, rot = 0, fill = '#a8988a', shade = '#7a6a5e') => `<g tran
   <path d="M-19 12C-10 18 4 20 12 16C20 12 22 4 21-4C18 6 10 12 0 12C-8 12-14 12-19 12Z" fill="${shade}" stroke="none"/>
   <path d="M-12-12C-8-16-2-17 3-16" fill="none" stroke="${W}" stroke-width="3.4" opacity=".75"/>
   <path d="M-20-6C-22-16-12-22-2-21C8-24 18-18 21-8C25 2 20 14 10 18C0 22-14 20-19 12C-24 6-22 0-20-6Z" fill="none"/></g>`;
+/** cartoon glove pointing left in local space, placed at (x,y) rotated by r; fingers: 'pinch' | 'open' */
+const hand = (x, y, r = 0, s = 1, c = '#8a5ad8', cuff = '#fff6e2', pose = 'pinch') => {
+  const f = pose === 'open'
+    ? `<rect x="-24" y="-17" width="30" height="9" rx="4.5" fill="${c}" transform="rotate(-14 4 -12)"/><rect x="-27" y="-8" width="32" height="9" rx="4.5" fill="${c}"/><rect x="-25" y="1" width="30" height="9" rx="4.5" fill="${c}" transform="rotate(10 4 5)"/><rect x="-19" y="9" width="24" height="8" rx="4" fill="${c}" transform="rotate(20 4 13)"/>`
+    : `<rect x="-20" y="-15" width="26" height="9.5" rx="4.75" fill="${c}"/><rect x="-14" y="-6" width="20" height="9.5" rx="4.75" fill="${c}"/><rect x="-12" y="3" width="18" height="9" rx="4.5" fill="${c}"/><rect x="-9" y="10" width="15" height="8" rx="4" fill="${c}"/>`;
+  return `<g transform="translate(${x} ${y}) rotate(${r}) scale(${s})">${f}
+    <rect x="0" y="-17" width="30" height="36" rx="12" fill="${c}"/>
+    <rect x="-16" y="-4" width="22" height="9" rx="4.5" fill="${c}" transform="rotate(${pose === 'open' ? 40 : -28} 4 0)"/>
+    <path d="M8 -11C12 -13 18 -13 22 -11" fill="none" stroke="${W}" stroke-width="3" opacity=".55"/>
+    <rect x="27" y="-20" width="14" height="42" rx="5" fill="${cuff}"/><path d="M33 -16V18" fill="none" stroke="#d8c8a8" stroke-width="2.4"/></g>`;
+};
 /** bottle body from the concept art (viewBox 100 x 110 space) */
 const flask = (liq, dark) => `<path d="M40 14h20v18c14 6 24 18 24 34 0 22-15 38-34 38S16 88 16 66c0-16 10-28 24-34z" fill="#e8f8ff" stroke-width="4.5"/>
   <path d="M19.5 62c8-6 18 4 30-1s20-6 30 1c1 2 1.5 5 1.5 8 0 19-13 32-31 32S18 89 18 70c0-3 .5-5.5 1.5-8z" fill="${liq}"/>
@@ -133,11 +144,19 @@ const T = {
     <path d="M54 22L34 54H47L43 78L66 44H53Z" fill="#ffd23f"/>
     <circle cx="50" cy="50" r="38" fill="none" stroke="${K}" stroke-width="14"/><circle cx="50" cy="50" r="38" fill="none" stroke="#ff3a4a" stroke-width="8"/>
     <path d="M23 23L77 77" stroke="${K}" stroke-width="14"/><path d="M23 23L77 77" stroke="#ff3a4a" stroke-width="8"/>${spark(88, 14, 6)}`,
-  steal: `<path d="M24 26L34 40L24 56L14 40Z" fill="#3ae0ff"/><path d="M14 40H34M20 40L24 26L28 40L24 56" fill="none" stroke-width="2.4"/>${spark(10, 22, 5)}
-    ${glove('#6a4ab8', '#3a2a6a')}<path d="M86 30H98M80 22H94M90 40H100" fill="none" stroke="${W}" stroke-width="3.4" opacity=".8"/>`,
-  quick_hands: `<g transform="rotate(-16 34 46)"><rect x="16" y="22" width="34" height="48" rx="6" fill="#ffd23f"/><rect x="21" y="27" width="24" height="38" rx="3" fill="#ffe27a" stroke-width="2.6"/>${spark(33, 46, 8, '#fff')}</g>
-    ${glove('#e8304a', '#8a1a2a')}${die(26, 84, 22, -10, 5, '#fff8e8')}
-    <path d="M70 18L96 12M74 30L98 28M60 8L84 2" fill="none" stroke="${W}" stroke-width="3.4" opacity=".85"/>`,
+  steal: `<path d="M12 60L18 40H70L76 60Z" fill="#8a4a2a"/><path d="M20 44H68" fill="none" stroke="#c87a4a" stroke-width="3"/>
+    <rect x="10" y="60" width="68" height="32" rx="5" fill="#c87a3a"/><path d="M10 72H78" fill="none" stroke-width="4"/>
+    <rect x="22" y="58" width="8" height="34" fill="#ffd23f" stroke-width="3.4"/><rect x="58" y="58" width="8" height="34" fill="#ffd23f" stroke-width="3.4"/>
+    <rect x="38" y="66" width="12" height="13" rx="3" fill="#ffd23f" stroke-width="3.4"/><circle cx="44" cy="72" r="2" fill="${K}" stroke="none"/>
+    ${hi('M16 66V86', 3.4, '#f0b070')}
+    <ellipse cx="44" cy="60" rx="28" ry="4" fill="#ffd23f" stroke="none" opacity=".8"/>
+    <path d="M44 14L54 26L44 42L34 26Z" fill="#3ae0ff"/><path d="M34 26H54M40 26L44 14L48 26L44 42" fill="none" stroke-width="2.4"/>
+    ${hand(62, 28, -24, 0.95, '#6a4ab8', '#fff6e2')}
+    <path d="M86 6L98 0M90 16L100 12M94 28L100 26" fill="none" stroke="${W}" stroke-width="3.4" opacity=".85"/>${spark(18, 22, 6)}${spark(28, 46, 4)}`,
+  quick_hands: `<path d="M4 34H22M2 48H18M6 62H20" fill="none" stroke="${W}" stroke-width="3.6" opacity=".85"/>
+    <g transform="rotate(-18 40 42)"><rect x="24" y="18" width="32" height="46" rx="6" fill="#ffd23f"/><rect x="29" y="23" width="22" height="36" rx="3" fill="#ffe27a" stroke-width="2.6"/>${spark(40, 41, 8, '#fff')}</g>
+    ${hand(60, 44, 10, 1, '#e8304a', '#fff6e2')}
+    ${die(22, 82, 24, -12, 5, '#fff8e8')}${spark(86, 14, 6)}`,
   swap: `<g transform="rotate(-12 30 50)"><rect x="12" y="26" width="34" height="48" rx="6" fill="#ffd23f"/><rect x="17" y="31" width="24" height="38" rx="3" fill="none" stroke-width="2.6"/><circle cx="29" cy="50" r="7" fill="#ff8a2a" stroke-width="2.6"/></g>
     <g transform="rotate(12 70 50)"><rect x="54" y="26" width="34" height="48" rx="6" fill="#3ad0ff"/><rect x="59" y="31" width="24" height="38" rx="3" fill="none" stroke-width="2.6"/><path d="M71 43L77 50L71 57L65 50Z" fill="#8a5ad8" stroke-width="2.6"/></g>
     ${tube('M26 18C38 6 58 6 70 14', '#3ac46a', 6)}${head(80, 22, 40, 8, '#3ac46a')}
@@ -207,10 +226,10 @@ const P = {
     <path d="M32 40L46 46M74 40L60 46" fill="none" stroke-width="5"/><ellipse cx="40" cy="51" rx="5" ry="5.4" fill="${W}"/><circle cx="41" cy="52" r="2.6" fill="${K}" stroke="none"/>
     <ellipse cx="64" cy="51" rx="5" ry="5.4" fill="${W}"/><circle cx="63" cy="52" r="2.6" fill="${K}" stroke="none"/>
     <path d="M40 68C46 64 56 64 62 68" fill="none" stroke-width="4"/>${hi('M26 30C30 22 38 16 46 15', 5, '#d8c8b8')}`,
-  land_slide: `<path d="M0 100V34L60 100Z" fill="#6a8a4a"/><path d="M0 34L60 100H44L0 52Z" fill="#8aa85a" stroke="none"/><path d="M0 100V34L60 100" fill="none"/>
-    ${rock(22, 30, 0.7, -20)}${rock(46, 52, 0.95, 10)}${rock(74, 76, 1.05, 30)}${rock(86, 40, 0.5, -10)}
-    <path d="M10 14C16 18 18 24 18 28M34 34C40 38 42 44 42 46M58 56C64 60 66 66 66 68" fill="none" stroke="${W}" stroke-width="3" opacity=".75"/>
-    <ellipse cx="80" cy="94" rx="16" ry="5" fill="#d8c8b0" stroke-width="3"/>`,
+  land_slide: `<path d="M0 100V30L64 100Z" fill="#6a8a4a"/><path d="M0 30L64 100H46L0 50Z" fill="#8aa85a" stroke="none"/><path d="M0 100V30L64 100" fill="none"/>
+    <path d="M6 22C12 26 16 32 16 38M30 40C36 44 40 50 40 54M56 60C62 64 66 70 66 74" fill="none" stroke="${W}" stroke-width="3.4" opacity=".85"/>
+    ${rock(20, 28, 0.62, -20)}${rock(46, 52, 0.85, 10)}${rock(76, 74, 1.15, 30)}${rock(88, 42, 0.42, -10)}${rock(64, 22, 0.3, 40)}
+    <ellipse cx="76" cy="95" rx="22" ry="5" fill="#e8dcc8" stroke-width="3"/><circle cx="54" cy="94" r="5" fill="#e8dcc8" stroke-width="2.6"/><circle cx="96" cy="92" r="4" fill="#e8dcc8" stroke-width="2.6"/>`,
   endless_pit: `<ellipse cx="50" cy="64" rx="46" ry="24" fill="#8ab8b0"/>
     <ellipse cx="50" cy="60" rx="36" ry="17" fill="#2a1a4a"/><ellipse cx="50" cy="62" rx="22" ry="9" fill="#120a24" stroke="none"/>
     <path d="M30 56c10 6 30 6 40 0" fill="none" stroke="#c88aff" stroke-width="3"/>
@@ -261,27 +280,25 @@ const P = {
     <path d="M48 30C38 16 26 18 30 26C32 30 40 30 48 30C56 30 64 30 66 26C70 18 58 16 48 30Z" fill="#ffd23f"/></g>
     <text x="80" y="30" font-family="Luckiest Guy, Lilita One, sans-serif" font-size="26" fill="#ffd23f" stroke-width="5" paint-order="stroke">!</text>
     ${hi('M24 64V86', 4, '#ff8a9a')}`,
-  poison_dart: `<g transform="rotate(-40 50 50)"><path d="M50 4L56 20H44Z" fill="#d8dce8"/><rect x="45" y="20" width="10" height="40" rx="3" fill="#a0602a"/>
-    <path d="M45 58L32 80L45 74ZM55 58L68 80L55 74Z" fill="#3ac46a"/><path d="M45 58H55V80H45Z" fill="#8af08a"/></g>
-    <path d="M70 26C70 30 74 34 74 38C74 42 70 44 68 42C66 40 66 34 70 26Z" fill="#7aff5a" stroke-width="3"/>
-    <path d="M80 44C80 48 84 50 84 54C84 57 80 59 78 57C76 55 77 50 80 44Z" fill="#7aff5a" stroke-width="3"/>
-    <path d="M82 14L86 20" stroke="#7aff5a" stroke-width="3"/>
-    <circle cx="20" cy="82" r="10" fill="#7aff5a"/><circle cx="17" cy="79" r="3" fill="${W}" stroke="none"/><circle cx="34" cy="92" r="5" fill="#7aff5a" stroke-width="3"/>`,
-  fumble: `<path d="M56 40C46 36 38 40 34 48M60 50C52 50 46 54 44 60" fill="none" stroke="${W}" stroke-width="3.4" stroke-dasharray="1 6" opacity=".9"/>
-    <g transform="translate(18 -14) scale(.82)">${glove('#3a8cff', '#1a4ac4')}</g>
-    <g transform="rotate(-30 27 70)"><rect x="14" y="52" width="26" height="36" rx="5" fill="#ffd23f"/><rect x="18.5" y="56.5" width="17" height="27" rx="3" fill="none" stroke-width="2.4"/><circle cx="27" cy="70" r="5.4" fill="#ff8a2a" stroke-width="2.4"/></g>
-    <g transform="rotate(24 54 80)"><rect x="42" y="62" width="24" height="34" rx="5" fill="#3ad0ff"/><rect x="46.5" y="66.5" width="15" height="25" rx="3" fill="none" stroke-width="2.4"/><path d="M54 72L59 79L54 86L49 79Z" fill="#8a5ad8" stroke-width="2.4"/></g>
-    <path d="M74 6C74 11 79 14 79 19C79 23 74 24 72 22C69 20 70 14 74 6Z" fill="#7ad8ff" stroke-width="2.6"/>
-    <text x="14" y="36" font-family="Luckiest Guy, Lilita One, sans-serif" font-size="22" fill="#ffd23f" stroke-width="5" paint-order="stroke">?!</text>`,
-  misstep: `<ellipse cx="50" cy="92" rx="36" ry="5" fill="${K}" opacity=".3" stroke="none"/>
-    <path d="M44 64C32 60 16 68 8 88C20 88 30 84 42 78Z" fill="#ffd23f"/><path d="M56 64C68 60 84 68 92 88C80 88 70 84 58 78Z" fill="#ffd23f"/>
-    <path d="M38 90C38 74 43 60 50 60C57 60 62 74 62 90Z" fill="#fff3a0"/>
-    <path d="M47 66C44 76 40 86 32 94C44 95 52 90 55 80Z" fill="#ffe27a"/>
-    <rect x="46.5" y="50" width="7" height="11" rx="2" fill="#8a5a2a"/>
-    <g fill="#a0602a" stroke="none"><ellipse cx="22" cy="80" rx="2.4" ry="1.6"/><ellipse cx="78" cy="78" rx="2.6" ry="1.6"/><ellipse cx="44" cy="86" rx="2" ry="1.4"/></g>
-    ${hi('M16 82C20 76 26 72 32 70', 3, '#fff8c0')}
-    ${tube('M82 40C74 14 40 10 24 30', '#ff3a4a', 7)}${head(16, 42, 118, 10, '#ff3a4a')}
-    <text x="54" y="36" text-anchor="middle" font-family="Luckiest Guy, Lilita One, sans-serif" font-size="22" fill="${W}" stroke-width="5" paint-order="stroke">-3</text>`,
+  poison_dart: `<g transform="rotate(-42 50 50)"><path d="M50 2L58 22H42Z" fill="#d8dce8"/>${hi('M48 8L46 18', 2.6)}<rect x="44" y="20" width="12" height="40" rx="3" fill="#a0602a"/><path d="M44 30H56M44 40H56" fill="none" stroke-width="2.6"/>
+    <path d="M44 56L26 84L44 76ZM56 56L74 84L56 76Z" fill="#3ac46a"/><path d="M44 56H56V84H44Z" fill="#8af08a"/></g>
+    <path d="M70 18C70 24 76 28 76 34C76 39 70 41 67 38C64 35 65 28 70 18Z" fill="#7aff5a" stroke-width="3"/>
+    <path d="M84 40C84 45 88 48 88 52C88 56 84 57 82 55C79 53 80 47 84 40Z" fill="#7aff5a" stroke-width="3"/>
+    <circle cx="20" cy="80" r="11" fill="#7aff5a"/><circle cx="16.5" cy="76.5" r="3.4" fill="${W}" stroke="none"/><circle cx="36" cy="92" r="5.6" fill="#7aff5a" stroke-width="3"/><circle cx="8" cy="64" r="4" fill="#7aff5a" stroke-width="2.6"/>`,
+  fumble: `${hand(66, 30, 34, 0.95, '#3a8cff', '#fff6e2', 'open')}
+    <path d="M48 46C40 52 36 58 34 66M56 52C54 60 54 66 56 72" fill="none" stroke="${W}" stroke-width="3.4" stroke-dasharray="1 7" opacity=".9"/>
+    <g transform="rotate(-34 26 74)"><rect x="13" y="56" width="26" height="36" rx="5" fill="#ffd23f"/><rect x="17.5" y="60.5" width="17" height="27" rx="3" fill="none" stroke-width="2.4"/><circle cx="26" cy="74" r="5.4" fill="#ff8a2a" stroke-width="2.4"/></g>
+    <g transform="rotate(26 62 82)"><rect x="50" y="66" width="24" height="33" rx="5" fill="#3ad0ff"/><rect x="54.5" y="70.5" width="15" height="24" rx="3" fill="none" stroke-width="2.4"/><path d="M62 75L67 82L62 89L57 82Z" fill="#8a5ad8" stroke-width="2.4"/></g>
+    <path d="M90 50C90 55 95 58 95 63C95 67 90 68 88 66C85 64 86 58 90 50Z" fill="#7ad8ff" stroke-width="2.6"/>
+    <text x="8" y="34" font-family="Luckiest Guy, Lilita One, sans-serif" font-size="24" fill="#ffd23f" stroke-width="5" paint-order="stroke">?!</text>`,
+  misstep: `<g fill="#aef0d4"><rect x="4" y="64" width="26" height="22" rx="5"/><rect x="37" y="64" width="26" height="22" rx="5"/><rect x="70" y="64" width="26" height="22" rx="5"/></g>
+    <g fill="#5e9a8a" stroke="none"><rect x="6" y="80" width="22" height="4" rx="2"/><rect x="39" y="80" width="22" height="4" rx="2"/><rect x="72" y="80" width="22" height="4" rx="2"/></g>
+    <path d="M4 92H96" fill="none" stroke-width="4"/>
+    <g transform="translate(83 66) scale(1.35)"><path d="M0 -2C-6 -12-14-14-18-10C-12-8-8-4-4 0Z" fill="#ffd23f" stroke-width="3"/><path d="M0 -2C6 -12 14-14 18-10C12-8 8-4 4 0Z" fill="#ffd23f" stroke-width="3"/>
+      <path d="M-5 0C-4-12 4-12 5 0Z" fill="#fff3a0" stroke-width="3"/><rect x="-2" y="-16" width="4" height="6" rx="1.5" fill="#8a5a2a" stroke-width="2.4"/></g>
+    ${tube('M80 52C70 22 30 20 18 50', '#ff3a4a', 7)}${head(16, 60, 104, 10, '#ff3a4a')}
+    <circle cx="50" cy="26" r="14" fill="#ff3a4a"/><text x="50" y="33" text-anchor="middle" font-family="Luckiest Guy, Lilita One, sans-serif" font-size="19" fill="${W}" stroke="none">-3</text>
+    <path d="M86 40L92 34M90 48L98 46" fill="none" stroke="${W}" stroke-width="3" opacity=".85"/>`,
 };
 
 export const ART = { treasure: T, trap: P };

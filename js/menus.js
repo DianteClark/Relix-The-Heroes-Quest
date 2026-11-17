@@ -292,13 +292,54 @@ const LINEUP = [
 ];
 const T = { raf: 0, emb: [], sprite: null, px: 0, py: 0, tx: 0, ty: 0, last: 0, cv: null, ctx: null, w: 0, h: 0, intro: false };
 
+// Painted dungeon gate (inline SVG, inked like the cards): mint voussoirs, keystone relic,
+// stone pillars with torches, a warm glow from the dungeon beyond.
+function gateSVG() {
+  const K = '#140c1e', cx = 200, cy = 196, r1 = 92, r2 = 128, n = 11;
+  let stones = '';
+  for (let i = 0; i < n; i++) {
+    const a0 = Math.PI + (i / n) * Math.PI + 0.012, a1 = Math.PI + ((i + 1) / n) * Math.PI - 0.012;
+    const p = (r, a) => `${(cx + Math.cos(a) * r).toFixed(1)} ${(cy + Math.sin(a) * r).toFixed(1)}`;
+    const key = i === (n - 1) / 2;
+    const ro = key ? r2 + 12 : r2;
+    stones += `<path d="M${p(r1, a0)}L${p(ro, a0)}A${ro} ${ro} 0 0 1 ${p(ro, a1)}L${p(r1, a1)}A${r1} ${r1} 0 0 0 ${p(r1, a0)}Z" fill="${key ? '#ffd23f' : i % 2 ? '#8fdcc0' : '#aef0d4'}"/>`;
+    if (!key) stones += `<path d="M${p(ro - 7, a0 + 0.05)}A${ro - 7} ${ro - 7} 0 0 1 ${p(ro - 7, a1 - 0.05)}" fill="none" stroke="#fff" stroke-width="4" opacity=".55"/>`;
+  }
+  const block = (x, y, w, h, f) => `<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="7" fill="${f}"/><path d="M${x + 7} ${y + 8}H${x + w - 10}" stroke="#fff" stroke-width="3.4" opacity=".4"/>`;
+  const pillar = (x) => [0, 1, 2, 3].map((j) => block(x, 196 + j * 34, 50, 34, j % 2 ? '#8b7bc6' : '#a294d8')).join('') + block(x - 8, 178, 66, 22, '#aef0d4');
+  const torch = (x) => `<g class="t-torch"><path d="M${x - 9} 214h18l-5 20h-8z" fill="#8a5a2a"/><rect x="${x - 13}" y="206" width="26" height="10" rx="4" fill="#5a4a6a"/>
+    <path class="t-flame" d="M${x} 168c10 12 16 20 14 30-2 9-8 12-14 12s-12-3-14-12c-2-10 4-18 14-30z" fill="#ff8a2a"/>
+    <path class="t-flame in" d="M${x} 184c5 7 8 11 7 17-1 5-4 7-7 7s-6-2-7-7c-1-6 2-10 7-17z" fill="#ffe27a" stroke="none"/></g>`;
+  return `<svg class="t-gate" viewBox="0 0 400 330" preserveAspectRatio="xMidYMax meet" aria-hidden="true">
+    <defs><linearGradient id="tgDoor" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="#2a1448"/><stop offset=".55" stop-color="#6a2a6a"/><stop offset="1" stop-color="#ffb05a"/></linearGradient>
+      <radialGradient id="tgGlow" cx=".5" cy="1" r=".75"><stop offset="0" stop-color="#fff0b0" stop-opacity=".95"/><stop offset=".5" stop-color="#ffb05a" stop-opacity=".5"/><stop offset="1" stop-color="#ff8a2a" stop-opacity="0"/></radialGradient>
+      <clipPath id="tgClip"><path d="M${cx - r1} 330V${cy}A${r1} ${r1} 0 0 1 ${cx + r1} ${cy}V330Z"/></clipPath></defs>
+    <g stroke="${K}" stroke-width="5" stroke-linejoin="round" stroke-linecap="round">
+      <path d="M${cx - r1} 330V${cy}A${r1} ${r1} 0 0 1 ${cx + r1} ${cy}V330Z" fill="url(#tgDoor)"/>
+      <g clip-path="url(#tgClip)" stroke="none"><ellipse class="t-doorglow" cx="${cx}" cy="330" rx="120" ry="130" fill="url(#tgGlow)"/>
+        <g fill="#3a2a5a" opacity=".55"><path d="M150 330l14-46h72l14 46z"/><rect x="168" y="250" width="64" height="12" rx="3"/><rect x="176" y="226" width="48" height="10" rx="3"/></g></g>
+      <g clip-path="url(#tgClip)"><g class="t-bars">${[0, 1, 2, 3, 4, 5, 6, 7].map((k) => `<path d="M${cx - 77 + k * 22} 90V158" stroke="${K}" stroke-width="10"/><path d="M${cx - 77 + k * 22} 90V158" stroke="#8b7bc6" stroke-width="4.5"/><path d="M${cx - 81 + k * 22} 162l4 10 4-10z" fill="#c8bce8" stroke-width="3"/>`).join('')}
+        <path d="M${cx - 92} 128H${cx + 92}" stroke="${K}" stroke-width="11"/><path d="M${cx - 92} 128H${cx + 92}" stroke="#8b7bc6" stroke-width="5"/></g></g>
+      ${pillar(cx - r2 - 18)}${pillar(cx + r2 - 32)}
+      ${stones}
+      <path d="M${cx} ${cy - r2 - 4}l12 15-12 17-12-17z" fill="#b06aff" stroke-width="4"/><path d="M${cx - 4} ${cy - r2 + 6}l4-6 4 6" fill="none" stroke="#fff" stroke-width="2.6"/>
+      ${torch(cx - r2 - 46)}${torch(cx + r2 + 46)}
+    </g></svg>`;
+}
+// The stone ledge the heroes stand on: mint top, lavender face, inked.
+function ledgeSVG() {
+  return `<svg class="t-ledge" viewBox="0 0 400 70" preserveAspectRatio="none" aria-hidden="true"><g stroke="#140c1e" stroke-width="4" stroke-linejoin="round" vector-effect="non-scaling-stroke">
+    <path d="M-10 26C40 14 110 10 200 10S360 14 410 26V80H-10Z" fill="#8b7bc6" vector-effect="non-scaling-stroke"/>
+    <path d="M-10 26C40 14 110 10 200 10S360 14 410 26C360 36 290 40 200 40S40 36-10 26Z" fill="#aef0d4" vector-effect="non-scaling-stroke"/>
+    <path d="M60 52l10 14M150 50l-6 18M250 50l8 16M340 52l-8 14" fill="none" stroke-width="3" vector-effect="non-scaling-stroke"/></g>
+    <path d="M30 24C90 15 150 14 200 14" fill="none" stroke="#fff" stroke-width="4" opacity=".6" stroke-linecap="round" vector-effect="non-scaling-stroke"/></svg>`;
+}
+
 function buildTitle(el) {
   el.className = 'screen m-screen m-title' + (el.classList.contains('active') ? ' active' : '');
   el.innerHTML = `
-    <div class="t-sky"></div>
-    <div class="t-layer t-dragon" data-depth="0.012"></div>
+    <div class="t-sky"><i class="t-sun"></i><i class="t-cloud c1"></i><i class="t-cloud c2"></i><i class="t-cloud c3"></i></div>
     <div class="t-layer t-rays" data-depth="0.02"></div>
-    <div class="t-fog t-fog1"></div>
     <canvas class="t-embers"></canvas>
     <div class="t-top">
       <button class="t-me" data-act="go" data-to="customize" aria-label="Customize banner"><canvas class="t-me-banner"></canvas><span><small>Your banner</small><b class="t-me-name"></b></span></button>
@@ -309,10 +350,11 @@ function buildTitle(el) {
       <div class="t-sub"><span>The Heroes' Quest</span></div>
     </div>
     <div class="t-stage">
+      <div class="t-scene t-layer" data-depth="0.008"><div class="t-wall"></div>${gateSVG()}</div>
       <div class="t-glow"></div>
       ${LINEUP.map((h, i) => `<div class="t-hero t-${h.row} ${h.hero ? 'lead' : ''} t-layer" data-depth="${h.row === 'front' ? 0.035 : 0.018}" style="--x:${h.x}%;--h:${h.h};--i:${i}">
         <button class="t-hero-btn" data-act="poke" aria-label="${esc(heroDef(h.id).name)}"><img src="${artUrl(heroDef(h.id).art)}" alt="" draggable="false"></button></div>`).join('')}
-      <div class="t-fog t-fog2"></div>
+      ${ledgeSVG()}
     </div>
     <nav class="t-menu">
       <button class="m-btn gold t-play" data-act="go" data-to="setup"><span class="t-play-ic">${I.play}</span><span>Play</span></button>
@@ -332,7 +374,7 @@ function buildTitle(el) {
   const sp = document.createElement('canvas');
   sp.width = sp.height = 32;
   const g = sp.getContext('2d'), rg = g.createRadialGradient(16, 16, 0, 16, 16, 16);
-  rg.addColorStop(0, 'rgba(255,240,190,1)'); rg.addColorStop(0.25, 'rgba(255,170,60,.85)'); rg.addColorStop(1, 'rgba(255,80,20,0)');
+  rg.addColorStop(0, 'rgba(255,255,235,1)'); rg.addColorStop(0.3, 'rgba(255,226,140,.9)'); rg.addColorStop(1, 'rgba(255,200,90,0)');
   g.fillStyle = rg; g.fillRect(0, 0, 32, 32);
   T.sprite = sp;
   el.addEventListener('pointermove', (e) => {
@@ -384,7 +426,6 @@ function titleLoop(now) {
     T.emb.push({ x: Math.random() * T.w, y: T.h + 10, vx: (Math.random() - 0.5) * 12, vy: -(18 + Math.random() * 42), life: 0, max: 4 + Math.random() * 5, s: 3 + Math.random() * 7, ph: Math.random() * 6 });
   }
   c.clearRect(0, 0, T.w, T.h);
-  c.globalCompositeOperation = 'lighter';
   for (let i = T.emb.length - 1; i >= 0; i--) {
     const p = T.emb[i];
     p.life += dt;
@@ -397,7 +438,6 @@ function titleLoop(now) {
     c.drawImage(T.sprite, p.x - s, p.y - s, s * 2, s * 2);
   }
   c.globalAlpha = 1;
-  c.globalCompositeOperation = 'source-over';
   T.raf = requestAnimationFrame(titleLoop);
 }
 
