@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Relix: every card (Stone &amp; Sky)</title>
+<link rel="icon" href="../assets/tiles/start.webp">
+<link rel="stylesheet" href="../css/cards.css" data-cards-css>
+<style>
+* { box-sizing: border-box; }
+body { margin: 0; color: #f4ecdf; font-family: 'Nunito', sans-serif; min-height: 100vh; background: #17111f linear-gradient(#2a1d3e, #17111f) no-repeat;
+  padding: calc(env(safe-area-inset-top) + 16px) 12px calc(env(safe-area-inset-bottom) + 40px); }
+h1, h2 { font-family: 'Luckiest Guy'; font-weight: normal; color: #ffe27a; letter-spacing: 1px; max-width: 1200px; margin: 26px auto 12px; -webkit-text-stroke: 1.5px #140c1e; paint-order: stroke fill; text-shadow: 0 3px 0 #140c1e; }
+h1 { text-align: center; font-size: 36px; margin-top: 0; }
+.row { max-width: 1200px; margin: 0 auto; display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 18px 12px; }
+.row .card { width: 100%; }
+.cap { text-align: center; font: 900 11px 'Nunito'; color: #b7a9c9; margin-top: 6px; text-transform: uppercase; letter-spacing: 1px; }
+.sizes { display: flex; gap: 14px; align-items: flex-end; flex-wrap: wrap; max-width: 1200px; margin: 0 auto; }
+@media (max-width: 480px) { .row { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+</style>
+</head>
+<body>
+<h1>Every card</h1>
+<h2>Sizes</h2><div class="sizes" id="sizes"></div>
+<div id="out"></div>
+<script type="module">
+import { HEROES, MONSTERS, BOSSES, TREASURES, TRAPS } from '../js/data.js';
+import { heroFront, heroBack, monsterCard, bossFront, bossBack, treasureCard, trapCard, cardBack, charCard, textCard } from '../js/cards.js';
+const cell = (html, cap) => `<div>${html}<div class="cap">${cap}</div></div>`;
+const sec = (t, items) => `<h2>${t}</h2><div class="row">${items.join('')}</div>`;
+document.getElementById('sizes').innerHTML = [52, 70, 96, 150, 240].map((w) => `<div style="width:${w}px">${heroFront('luke', 62)}</div><div style="width:${w}px">${treasureCard('ultra_potion')}</div><div style="width:${w}px">${heroBack('shi')}</div>`).join('');
+document.querySelectorAll('#sizes .card').forEach((c) => { c.style.width = '100%'; });
+document.getElementById('out').innerHTML = [
+  sec('Heroes', HEROES.flatMap((h) => [cell(heroFront(h.id), h.name), cell(heroBack(h.id), `${h.name} back`)])),
+  sec('Bosses', BOSSES.flatMap((b) => [cell(bossFront(b), b.name), cell(bossBack(b), `${b.name} back`)])),
+  sec('Monsters', MONSTERS.map((m) => cell(monsterCard(m.id), `${m.name} ×${m.count}`))),
+  sec('Treasures', TREASURES.map((t) => cell(treasureCard(t.id), `${t.id} ×${t.count}`))),
+  sec('Traps', TRAPS.map((t) => cell(trapCard(t.id), `${t.id} ×${t.count}`))),
+  sec('Backs', ['Hero', 'Monster', 'Boss', 'Treasure', 'Trap', 'Pet'].map((w) => cell(cardBack(w), w))),
+  sec('Legacy calls', [cell(charCard({ art: 'trov', name: 'Trov', atk: 1, hp: 1, maxHp: 2 }), 'charCard() enemy'), cell(textCard({ title: 'Notice', lines: ['A generic text card still renders.'], foot: 'Info' }), 'textCard()')]),
+].join('');
+</script>
+</body>
+</html>
