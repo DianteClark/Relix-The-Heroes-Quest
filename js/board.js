@@ -33,6 +33,9 @@ function spiral(n) {
   }
   return cells;
 }
+function ladderCols(rows, rungs) {
+  return ladder(rows, rungs).map(([x, z]) => [z, x]);
+}
 // A path with gaps between rows (rows connected at alternating ends).
 function ladder(cols, rungs) {
   const cells = [];
@@ -50,7 +53,7 @@ const SHAPES = {
   1: () => snakeRows(6, 6),
   2: () => snakeCols(6, 6),
   3: () => ladder(7, 5),
-  4: () => spiral(6),
+  4: () => ladderCols(7, 5),
   5: () => snakeRows(7, 5),
 };
 

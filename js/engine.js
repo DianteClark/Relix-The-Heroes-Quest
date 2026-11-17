@@ -45,6 +45,7 @@ export class Game {
       name: pc.name || heroDef(pc.hero).name,
       hero: pc.hero,
       isBot: !!pc.bot,
+      banner: pc.banner || null,
       hp: MAX_HP,
       maxHp: MAX_HP,
       pos: 0,
@@ -86,6 +87,7 @@ export class Game {
   coop() { return this.mode === 'pvr'; }
   log(msg, cls) { this.io.log?.(msg, cls); }
   emit(type, data = {}) { this.io.event?.(type, data); }
+  async show(type, data = {}) { if (this.speed >= 0.05 && this.io.show) await this.io.show(type, data); }
   async wait(ms) { if (this.speed > 0) await this.io.pause?.(ms * this.speed); }
   playersAt(i) { return this.living().filter((p) => p.pos === i); }
   others(p) { return this.living().filter((q) => q !== p); }
@@ -111,7 +113,7 @@ export class Game {
     return values;
   }
 
-  drawTreasure(p, n = 1, why = '') {
+  async drawTreasure(p, n = 1, why = '', opts = {}) {
     const got = [];
     for (let i = 0; i < n; i++) {
       const c = this.treasure.draw();
@@ -122,6 +124,7 @@ export class Game {
     if (got.length) {
       this.log(`${p.name} draws ${got.length === 1 ? 'a treasure' : got.length + ' treasures'}${why ? ' ' + why : ''}.`, 'loot');
       this.emit('draw', { player: p.id, cards: got });
+      if (!opts.quiet) await this.show('cardReveal', { player: p.id, cards: got, why });
     }
     return got;
   }
@@ -132,7 +135,7 @@ export class Game {
     if (this.hasPet(p, 'kitsune')) amt += 3;
     const before = p.hp;
     p.hp = Math.min(p.maxHp, p.hp + amt);
-    this.log(`${p.name} heals ${p.hp - before}${source ? ' (' + source + ')' : ''}.`, 'heal');
+    if (p.hp - before > 0) this.log(`${p.name} heals ${p.hp - before}${source ? ' (' + source + ')' : ''}.`, 'heal');
     this.emit('hp', { player: p.id, delta: p.hp - before });
   }
 
@@ -187,6 +190,7 @@ export class Game {
     p.hand = []; p.equipped = []; p.relics = [];
     const where = p.pos;
     this.log(`☠ ${p.name} has died${ctx.from ? ' to ' + ctx.from : ''}!`, 'death');
+    if (this.inCombat === p.id) await this.show('defeat', { side: 'hero', player: p.id });
 
     if (cause === 'player' && killer && killer !== p && this.active(killer)) {
       killer.hand.push(...cards);
@@ -223,7 +227,7 @@ export class Game {
       p.hp = RESPAWN_HP;
       this.emit('respawn', { player: p.id });
       this.log(`${p.name} respawns at Start with ${RESPAWN_HP} HP.`);
-      this.drawTreasure(p, diedInBoss ? 2 : 1, 'as a fresh start');
+      await this.drawTreasure(p, diedInBoss ? 2 : 1, 'as a fresh start');
     } else if (this.mode === 'elimination') {
       p.out = true;
       p.pos = 0;
@@ -257,11 +261,11 @@ export class Game {
     this.emit('start');
     this.log(`A new quest begins (${this.modeName()}). Turn order: ${this.order.map((id) => this.players[id].name).join(' → ')}.`, 'big');
     if (this.coop()) {
-      const g = { id: this.guildSeq++, name: 'The Party', color: GUILD_COLORS[1], leader: this.order[0] };
+      const g = { id: this.guildSeq++, name: 'The Party', color: GUILD_COLORS[1], banner: this.players[this.order[0]].banner, leader: this.order[0] };
       this.guilds.push(g);
       for (const p of this.players) p.guild = g.id;
     }
-    for (const p of this.players) this.drawTreasure(p, 1, 'to begin');
+    for (const p of this.players) await this.drawTreasure(p, 1, 'to begin', { quiet: true });
     for (let f = 1; f <= 5 && !this.over; f++) {
       await this.startFloor(f);
       await this.playFloor();
@@ -291,7 +295,7 @@ export class Game {
     }
     this.log(`— Floor ${f}: ${def.theme.name}. ${def.name} awaits (${def.hp} HP). —`, 'floor');
     this.emit('floor', { floor: f });
-    await this.wait(900);
+    await this.show('floorIntro', { floor: f });
   }
 
   async playFloor() {
@@ -316,6 +320,7 @@ export class Game {
   async takeTurn(p) {
     this.current = p;
     this.emit('turn', { player: p.id });
+    await this.show('turnStart', { player: p.id });
     if (p.skip > 0) {
       p.skip--;
       this.log(`${p.name} loses this turn.`);
@@ -504,17 +509,19 @@ export class Game {
       if (ans === 'done') break;
       invited.push(this.players[+ans.slice(1)]);
     }
+    if (!invited.length) { this.log('No invitations were sent, so the banner is wasted.', 'guild'); return; }
+    const slot = this.guildSeq++;
+    const suggested = GUILD_NAMES[slot % GUILD_NAMES.length];
+    let gname = suggested;
+    if (!p.isBot && this.io.nameGuild && this.speed >= 0.05) gname = ((await this.io.nameGuild(p, suggested)) || suggested).slice(0, 24);
     const joined = [];
     for (const q of invited) {
-      const yes = await this.decide(q, { kind: 'guild_accept', title: `${p.name} invites you to form a guild`, text: 'Guilds are permanent until disbanded. Guild Relics count together at the end.', options: [{ id: 'yes', label: 'Accept', primary: true }, { id: 'no', label: 'Decline' }], from: p.id });
+      const yes = await this.decide(q, { kind: 'guild_accept', title: `${p.name} invites you to join ${gname}`, text: 'Guilds are permanent until disbanded. Guild Relics count together at the end.', options: [{ id: 'yes', label: 'Accept', primary: true }, { id: 'no', label: 'Decline' }], from: p.id, guildName: gname });
       if (yes === 'yes') joined.push(q);
       this.log(`${q.name} ${yes === 'yes' ? 'accepts' : 'declines'} the invitation.`, 'guild');
     }
     if (!joined.length) { this.log('Nobody joined, so the banner is wasted.', 'guild'); return; }
-    const slot = this.guildSeq++;
-    const g = { id: slot, name: GUILD_NAMES[slot % GUILD_NAMES.length], color: GUILD_COLORS[slot % GUILD_COLORS.length], leader: p.id };
-    this.guilds.push(g);
-    for (const q of [p, ...joined]) q.guild = g.id;
+    const g = { id: slot, name: gname, color: (p.banner && p.banner.field) || GUILD_COLORS[slot % GUILD_COLORS.length], banner: p.banner, leader: p.id };
     this.log(`The guild ${g.name} is formed, led by ${p.name}: ${[p, ...joined].map((q) => q.name).join(', ')}.`, 'guild');
     this.emit('guilds');
   }
@@ -577,7 +584,7 @@ export class Game {
   async resolveTile(p, alive) {
     const t = this.tile(p.pos);
     if (t.type === TILE.TREASURE) {
-      this.drawTreasure(p, 1, 'from the treasure tile');
+      await this.drawTreasure(p, 1, 'from the treasure tile');
     } else if (t.type === TILE.MONSTER) {
       const n = p.fx.doubleBattle ? 2 : 1;
       if (p.fx.doubleBattle) { p.fx.doubleBattle = false; this.log(`Double Battle! ${p.name} must fight 2 monsters.`, 'big'); }
@@ -600,7 +607,7 @@ export class Game {
     const d = trapDef(card.id);
     this.log(`Trap! ${p.name} draws ${d.name}: ${d.text}`, 'trap');
     this.emit('trap', { player: p.id, card });
-    await this.wait(900);
+    await this.show('trapReveal', { player: p.id, card });
     this.traps.toss(card);
     await this.applyTrap(p, card.id, at, alive);
   }
@@ -679,6 +686,7 @@ export class Game {
         const ans = await this.decide(p, { kind: 'chan_kong', title: `Rage: −${cost} health for +${gain} damage?`, options: [{ id: 'yes', label: `Use it (+${gain} dmg)`, primary: true }, { id: 'no', label: 'Not this time' }], cost, gain });
         if (ans === 'yes') {
           mods.bonus += gain;
+          mods.text = `RAGE! +${gain} DMG`;
           const died = await this.hurt(p, cost, ctx.cause || 'monster', null, { from: 'his own rage' });
           if (died) mods.dead = true;
         }
@@ -687,32 +695,43 @@ export class Game {
       case 'josue': {
         const [a, b] = await this.rollDice(p, 2, 'Josue: bonus damage');
         mods.bonus += a + b;
+        mods.text = `ASSASSINATE +${a + b}`;
         this.log(`Josue adds ${a + b} damage!`, 'skill');
         break;
       }
-      case 'luke': mods.reduce += { 4: 2, 5: 3, 6: 5 }[v]; break;
+      case 'luke': mods.reduce += { 4: 2, 5: 3, 6: 5 }[v]; mods.text = `GUARD −${{ 4: 2, 5: 3, 6: 5 }[v]}`; break;
       case 'nowtna': {
         const amt = { 4: 3, 5: 4, 6: 8 }[v];
         const team = [p, ...this.others(p).filter((q) => this.sameGuild(p, q))];
         const target = team.length > 1 ? await this.choosePlayer(p, team, `Heal whom for +${amt}?`, 'heal_target') : p;
+        mods.text = `HEAL +${amt}`;
+        await this.show('skill', { player: p.id, text: mods.text });
+        mods.shown = true;
         await this.heal(target, amt, 'Nowtna');
         break;
       }
       case 'shi': {
         const steals = v === 5 ? 2 : 1;
+        await this.show('skill', { player: p.id, text: steals === 2 ? 'DOUBLE STEAL!' : 'STEAL!' });
+        mods.shown = true;
         for (let k = 0; k < steals; k++) {
           const victims = this.foes(p).filter((q) => q.hand.length);
-          if (v === 1 || !victims.length) { this.drawTreasure(p, 1, 'from the treasure pile'); continue; }
+          if (v === 1 || !victims.length) { await this.drawTreasure(p, 1, 'from the treasure pile'); continue; }
           let src = 'player';
           if (v === 5) src = await this.decide(p, { kind: 'shi_source', title: `Steal ${k + 1} of 2: from where?`, options: [{ id: 'player', label: 'Another player' }, { id: 'pile', label: 'The treasure pile' }] });
-          if (src === 'pile') { this.drawTreasure(p, 1, 'from the treasure pile'); continue; }
+          if (src === 'pile') { await this.drawTreasure(p, 1, 'from the treasure pile'); continue; }
           const q = await this.choosePlayer(p, victims, 'Steal from which player?', 'steal_target');
           this.stealRandom(p, q);
         }
         break;
       }
-      case 'yessi': await this.yessiBomb(p, v, ctx); break;
+      case 'yessi':
+        await this.show('skill', { player: p.id, text: v === 6 ? 'MEGA BOMB!' : 'BOMB!' });
+        mods.shown = true;
+        await this.yessiBomb(p, v, ctx);
+        break;
     }
+    if (mods.text && !mods.shown) await this.show('skill', { player: p.id, text: mods.text });
     return mods;
   }
 
@@ -807,6 +826,7 @@ export class Game {
     }
     const atk = heroDef(p.hero).atk;
     const hits = values.filter((v) => v >= 4).length;
+    const crits = values.filter((v) => v === 6).length, cmiss = values.filter((v) => v === 1).length;
     let dealt = values.reduce((s, v) => s + (v === 6 ? 2 * atk : v >= 4 ? atk : 0), 0);
     if (hits > 0) dealt += m.sword;
     dealt += skillMods.bonus;
@@ -819,9 +839,9 @@ export class Game {
     const reduce = m.shield + skillMods.reduce + (this.hasPet(p, 'golem') ? 1 : 0);
     taken = Math.max(0, taken - reduce);
 
-    const crits = values.filter((v) => v === 6).length, cmiss = values.filter((v) => v === 1).length;
     this.log(`${p.name} rolls ${values.join(' ')} — ${hits} hit${hits === 1 ? '' : 's'}${crits ? ` (${crits} crit)` : ''}${cmiss ? `, ${cmiss} critical miss` : ''}.`);
 
+    await this.show('exchange', { player: p.id, enemy, dealt, taken: enemy.hp - dealt <= 0 ? 0 : taken, crits, cmiss, hits, values, kills: enemy.hp - dealt <= 0 });
     if (dealt > 0) {
       enemy.hp = Math.max(0, enemy.hp - dealt);
       if (enemy.kind === 'boss') this.boss.hp = enemy.hp;
@@ -840,7 +860,8 @@ export class Game {
     const enemy = { kind: 'monster', id: def.id, name: def.name, art: def.art, hp: def.hp, maxHp: def.hp, atk: def.atk };
     this.log(`A ${def.name} appears (${def.hp} HP, ${def.atk} attack)!`, 'monster');
     this.emit('combat', { player: p.id, enemy });
-    await this.wait(700);
+    this.inCombat = p.id;
+    await this.show('combatStart', { player: p.id, enemy, kind: 'monster' });
     const battle = this.newBattle();
     let first = true;
     while (alive() && enemy.hp > 0) {
@@ -858,6 +879,9 @@ export class Game {
     if (enemy.hp <= 0 && alive()) {
       p.kills++;
       this.log(`${p.name} defeats the ${def.name}!`, 'big');
+      await this.show('defeat', { side: 'enemy', player: p.id });
+      await this.show('combatEnd', { won: true });
+      this.inCombat = null;
       this.emit('combatEnd', { won: true });
       // Surprise: no treasure at all. Extra Loot: draw 2 instead of 1. Kezz: +1.
       let n = 0;
@@ -865,8 +889,10 @@ export class Game {
         n = battle.extraLoot ? 2 : 1;
         if (this.hasPet(p, 'goblin')) n += 1;
       }
-      if (n) this.drawTreasure(p, n, 'as loot');
+      if (n) await this.drawTreasure(p, n, 'as loot');
     } else {
+      await this.show('combatEnd', { won: false });
+      this.inCombat = null;
       this.emit('combatEnd', { won: false });
     }
   }
@@ -877,24 +903,28 @@ export class Game {
     const enemy = { kind: 'boss', id: b.def.id, name: b.def.name, art: b.def.art, hp: b.hp, maxHp: b.maxHp, atk: b.def.atk };
     const battle = (p.bossBattle ||= this.newBattle());
     this.emit('combat', { player: p.id, enemy, boss: true });
+    this.inCombat = p.id;
+    await this.show('combatStart', { player: p.id, enemy, kind: 'boss' });
     b.rolls++;
     this.stats.bossRolls++;
     const fx = {};
     if (b.rolls % 3 === 0) {
       this.log(`${b.def.name}'s skill activates! ${b.def.skill.split('.')[0].replace(/^Every third battle roll /, '')}.`, 'boss');
       this.emit('bossSkill', { id: b.def.id });
-      await this.wait(900);
+      await this.show('bossSkill', { id: b.def.id, player: p.id });
       switch (b.def.id) {
         case 'skeleton_general': fx.sgPlus = true; break;
         case 'ikias_boss': fx.doubleMiss = true; break;
         case 'enguxi': b.minus = Math.min(4, b.minus + 1); this.log(`Everyone now rolls ${b.minus} fewer ${b.minus === 1 ? 'die' : 'dice'} in combat.`); break;
         case 'raskon':
           for (const q of this.playersAt(this.bossIdx)) await this.hurt(q, 10, 'boss', null, { from: 'Raskon' });
-          if (!alive()) { this.emit('combatEnd', {}); return; }
+          if (!alive()) { await this.show('combatEnd', {}); this.inCombat = null; this.emit('combatEnd', {}); return; }
           break;
         case 'vore': {
           const traps = this.board.tiles.filter((t) => t.type === TILE.TRAP && t.i < this.bossIdx);
           const dest = traps.length ? traps[traps.length - 1].i : 0;
+          await this.show('combatEnd', {});
+          this.inCombat = null;
           this.emit('combatEnd', {});
           this.log(`${p.name} is hurled out of the Boss Room!`, 'big');
           await this.moveTo(p, dest, 'warp');
@@ -909,6 +939,9 @@ export class Game {
     if (alive() && (!battle.skillUsed || m.refresh)) skillMods = await this.skillCheck(p, battle, { enemy, cause: 'boss' });
     if (alive() && enemy.hp > 0) await this.battleRoll(p, enemy, battle, m, skillMods, fx);
     b.hp = enemy.hp;
+    if (b.hp <= 0 && !b.defeated && alive()) await this.show('defeat', { side: 'enemy', player: p.id, boss: true });
+    if (this.inCombat != null) await this.show('combatEnd', {});
+    this.inCombat = null;
     if (b.hp <= 0 && !b.defeated) {
       if (alive()) await this.bossDefeated(p);
       else await this.bossDefeatedBy(null);
@@ -931,10 +964,10 @@ export class Game {
     for (const pile of Object.values(this.tileLoot)) { p.hand.push(...pile.cards); p.relics.push(...pile.relics); swept += pile.cards.length; sweptR += pile.relics.length; }
     this.tileLoot = {};
     if (swept || sweptR) this.log(`${p.name} also sweeps up ${swept} treasure(s)${sweptR ? ' and ' + sweptR + ' Relic(s)' : ''} left on the floor.`, 'loot');
-    if (this.hasPet(p, 'goblin')) this.drawTreasure(p, 1, 'thanks to Kezz');
+    if (this.hasPet(p, 'goblin')) await this.drawTreasure(p, 1, 'thanks to Kezz');
     this.growPets();
     this.emit('bossDown', { player: p.id, relic });
-    await this.wait(1800);
+    await this.show('relic', { player: p.id, relic });
     this.checkRelicWin();
   }
   async bossDefeatedBy() {
@@ -978,7 +1011,7 @@ export class Game {
     this.stats.pvp++;
     this.log(`⚔ PvP on this tile: ${sides.map((s) => s.members.map((q) => q.name).join(' + ')).join(' vs ')}!`, 'pvp');
     this.emit('pvp', { at, players: here.map((q) => q.id) });
-    await this.wait(700);
+    await this.show('pvpStart', { at, mover: mover.id, sides: sides.map((x) => x.members.map((q) => q.id)) });
 
     const multiGuild = sides.filter((s) => s.guild && s.members.length > 1).length >= 2;
     for (const s of sides) {
@@ -1051,16 +1084,18 @@ export class Game {
       if (s === winner) continue;
       for (const q of s.members) {
         if (!this.active(q) || q.pos !== at) continue;
-        if (s.letDown) { await this.hurt(q, 5, 'player', winner ? winner.rep : null, { from: 'Let Down' }); continue; }
+        if (s.letDown) { await this.show('pvpHit', { winner: winner ? winner.rep.id : null, loser: q.id, dmg: 5 }); await this.hurt(q, 5, 'player', winner ? winner.rep : null, { from: 'Let Down' }); continue; }
         if (!winner) continue;
         let dmg = PVP_BASE + stack + winner.mods.bonus + winner.mods.sword;
         dmg *= this.innerMult(winner.mods.inner);
         const reduce = s.mods.shield + s.mods.reduce + (this.hasPet(q, 'golem') ? 1 : 0);
         dmg = Math.max(0, dmg - reduce);
+        await this.show('pvpHit', { winner: winner.rep.id, loser: q.id, dmg, crit: stack > 0 });
         await this.hurt(q, dmg, 'player', winner.rep, { from: winner.rep.name });
       }
     }
     if (winner) this.log(`${winner.members.map((q) => q.name).join(' + ')} win${winner.members.length === 1 ? 's' : ''} the PvP!`, 'pvp');
+    await this.show('pvpEnd', { at, winner: winner ? winner.rep.id : null });
     this.emit('pvpEnd', { at });
   }
 

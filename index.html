@@ -8,6 +8,7 @@
   <meta name="theme-color" content="#16121f">
   <link rel="icon" href="assets/tiles/start.webp">
   <link rel="stylesheet" href="css/style.css">
+  <link rel="stylesheet" href="css/flow.css">
 </head>
 <body>
   <!-- Title -->
@@ -57,21 +58,18 @@
     <div id="hud">
       <div id="topbar">
         <div class="floor"><b id="floorNum">Floor 1</b><span id="floorName"></span></div>
-        <div class="boss-mini" id="bossMini"></div>
-        <div class="top-btns">
-          <button class="icon-btn" id="btnLog" title="Game log">📜</button>
-          <button class="icon-btn" id="btnMenu" title="Menu">☰</button>
-        </div>
+        <button class="boss-mini" id="bossMini" aria-label="Boss details"></button>
+        <button class="icon-btn" id="btnMenu" aria-label="Menu">☰</button>
       </div>
       <div id="players"></div>
       <div id="combat" class="hidden"></div>
       <div id="dice" class="hidden"><div class="dice-label"></div><div class="dice-row"></div></div>
-      <div id="toast" class="hidden"></div>
       <div id="bottom">
+        <div id="ticker"></div>
         <div id="prompt" class="hidden"></div>
-        <div id="hand"></div>
+        <button id="handBtn" class="hidden" aria-label="Your cards"></button>
       </div>
-      <aside id="log" class="hidden"><header>Quest log <button class="icon-btn" id="btnLogClose">✕</button></header><div id="logList"></div></aside>
+      <aside id="log" class="hidden"><header>Quest log <button class="icon-btn" id="btnLogClose" aria-label="Close log">✕</button></header><div id="logList"></div></aside>
     </div>
   </section>
 

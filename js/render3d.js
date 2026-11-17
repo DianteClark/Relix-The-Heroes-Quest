@@ -5,6 +5,8 @@ import { TILE, heroDef } from './data.js';
 
 const S = 1.3; // grid spacing
 const T = 1.12; // tile size
+const START_R = 0.95; // start platform radius
+const BOSS_R = 1.15; // boss platform radius
 const loader = new THREE.TextureLoader();
 const texCache = {};
 export function tex(path) {
@@ -64,7 +66,7 @@ export class BoardView {
     this.sun = new THREE.DirectionalLight(0xffffff, 2.2);
     this.sun.position.set(-8, 16, 6);
     this.sun.castShadow = true;
-    this.sun.shadow.mapSize.set(2048, 2048);
+    this.sun.shadow.mapSize.set(1024, 1024);
     const sc = this.sun.shadow.camera; sc.left = -14; sc.right = 14; sc.top = 14; sc.bottom = -14; sc.far = 60;
     this.sun.shadow.bias = -0.0008;
     this.scene.add(this.sun, this.sun.target);
@@ -96,10 +98,9 @@ export class BoardView {
 
   updateCamera() {
     const a = this.aspect || 1;
-    const diag = this.diag || 6;
-    const needW = diag + (a < 0.8 ? 0.2 : 1.2);
-    const needH = diag * 0.62 + 2.4;
-    const half = Math.max(needH, needW / a) / this.zoom;
+    // Portrait leaves room for the HUD bars at the top and bottom.
+    const hw = this.halfW || 6, hh = (this.halfH || 5) * (a < 1 ? 1.35 : 1.12);
+    const half = Math.max(hh, hw / a) / this.zoom;
     this.camera.left = -half * a; this.camera.right = half * a; this.camera.top = half; this.camera.bottom = -half;
     this.camera.updateProjectionMatrix();
   }
@@ -128,7 +129,7 @@ export class BoardView {
       const dx = e.clientX - drag.x, dy = e.clientY - drag.y;
       moved += Math.abs(dx) + Math.abs(dy);
       drag = { x: e.clientX, y: e.clientY };
-      if (moved > 6) {
+      if (moved > 14) {
         this.follow = false;
         const scale = (this.camera.right - this.camera.left) / el.clientWidth;
         const right = new THREE.Vector3(1, 0, -1).normalize();
@@ -140,7 +141,7 @@ export class BoardView {
       pts.delete(e.pointerId);
       if (pts.size < 2) pinch = null;
       if (pts.size === 0) {
-        if (moved < 6 && this.onPick) this.pick(e);
+        if (moved < 14 && this.onPick) this.pick(e);
         drag = null;
       }
     };
@@ -162,10 +163,36 @@ export class BoardView {
   }
 
   tilePos(i) {
-    const t = this.board.tiles[i];
-    return new THREE.Vector3(this.cx - t.x * S, this.tileTop(i), this.cz - t.z * S);
+    const d = this.disp[i];
+    return new THREE.Vector3(d.x, this.tileTop(i), d.z);
   }
-  tileTop(i) { return this.board.tiles[i].type === TILE.BOSS ? 0.62 : 0.26; }
+  isPlatform(i) { return i === 0 || i === this.board.bossIdx; }
+  tileTop(i) { return i === this.board.bossIdx ? 0.62 : i === 0 ? 0.34 : 0.26; }
+
+  // World positions: grid tiles, with Start and the Boss Room pushed out past the
+  // ends of the path as big round platforms so all six heroes fit.
+  layout() {
+    const tiles = this.board.tiles;
+    const raw = tiles.map((t) => new THREE.Vector3(-t.x * S, 0, -t.z * S));
+    const n = tiles.length - 1;
+    const push = (i, j, dist) => {
+      const dir = raw[i].clone().sub(raw[j]).normalize();
+      raw[i] = raw[i].clone().addScaledVector(dir, dist);
+    };
+    push(0, 1, START_R + 0.35);
+    push(n, n - 1, BOSS_R + 0.2);
+    const box = new THREE.Box3().setFromPoints(raw);
+    const c = box.getCenter(new THREE.Vector3());
+    this.disp = raw.map((v) => v.sub(c));
+    const size = box.getSize(new THREE.Vector3());
+    this.bounds = { w: size.x + T, d: size.z + T };
+    this.extent = Math.max(size.x, size.z) + 4;
+    // Exact on-screen extent of the board for the isometric camera.
+    const sx = this.disp.map((v) => (v.x - v.z) * Math.SQRT1_2);
+    const sy = this.disp.map((v) => (v.x + v.z) * Math.SQRT1_2);
+    this.halfW = (Math.max(...sx) - Math.min(...sx)) / 2 + 1.1;
+    this.halfH = (Math.max(...sy) - Math.min(...sy)) / 2 * 0.62 + 1.6;
+  }
 
   // ---------- floor construction ----------
   setFloor(game) {
@@ -180,29 +207,25 @@ export class BoardView {
     this.highlights = [];
     this.lootMarks = {};
     this.enemy = null;
+    this.atmo = [];
 
     this.scene.background = new THREE.Color(theme.sky);
-    this.scene.fog = new THREE.Fog(theme.fog, 26, 60);
+    this.scene.fog = new THREE.Fog(theme.fog, 24, 58);
     this.hemi.color.set(theme.light);
     this.hemi.groundColor.set(theme.ground);
 
     const tiles = this.board.tiles;
-    this.cx = (this.board.cols - 1) * S / 2;
-    this.cz = (this.board.rows - 1) * S / 2;
-    this.extent = Math.max(this.board.cols, this.board.rows) * S + 3;
-    this.diag = (this.board.cols + this.board.rows) / 2 * S * 0.72;
+    this.layout();
+    const bossIdx = this.board.bossIdx;
 
-    // Ground plane with a faint flagstone pattern.
     const groundTex = this.makeGroundTexture(theme);
-    const ground = new THREE.Mesh(new THREE.PlaneGeometry(80, 80), new THREE.MeshStandardMaterial({ color: 0xffffff, map: groundTex, roughness: 0.95 }));
-    groundTex.repeat.set(20, 20);
+    const ground = new THREE.Mesh(new THREE.PlaneGeometry(90, 90), new THREE.MeshStandardMaterial({ color: 0xffffff, map: groundTex, roughness: 0.95 }));
+    groundTex.repeat.set(22, 22);
     ground.rotation.x = -Math.PI / 2;
     ground.receiveShadow = true;
     this.world.add(ground);
 
-    // Raised dungeon floor under the board.
-    const padW = this.board.cols * S + 1.4, padD = this.board.rows * S + 1.4;
-    const pad = new THREE.Mesh(roundedSlab(padW, padD, 0.5, 0.1, 0.06), new THREE.MeshStandardMaterial({ color: new THREE.Color(theme.ground).multiplyScalar(0.8), roughness: 0.9 }));
+    const pad = new THREE.Mesh(roundedSlab(this.bounds.w + 1.6, this.bounds.d + 1.6, 0.6, 0.1, 0.06), new THREE.MeshStandardMaterial({ color: new THREE.Color(theme.ground).multiplyScalar(0.8), roughness: 0.9 }));
     pad.receiveShadow = true;
     this.world.add(pad);
 
@@ -210,75 +233,147 @@ export class BoardView {
     const insetGeo = roundedSlab(T * 0.8, T * 0.8, 0.12, 0.02, 0.02);
     const stone = new THREE.Color(theme.ground).lerp(new THREE.Color(0x8a8a96), 0.45);
     const iconGeo = new THREE.PlaneGeometry(T * 0.7, T * 0.7);
-    const icons = { [TILE.MONSTER]: 'monster', [TILE.TREASURE]: 'treasure', [TILE.TRAP]: 'trap', [TILE.START]: 'start' };
+    const icons = { [TILE.MONSTER]: 'monster', [TILE.TREASURE]: 'treasure', [TILE.TRAP]: 'trap' };
+    const chevGeo = new THREE.ConeGeometry(0.09, 0.2, 3);
+    const chevMat = new THREE.MeshStandardMaterial({ color: 0xffffff, emissive: 0xffffff, emissiveIntensity: 0.35 });
 
     tiles.forEach((t, i) => {
       const g = new THREE.Group();
-      const p = new THREE.Vector3(this.cx - t.x * S, 0.1, this.cz - t.z * S);
-      g.position.copy(p);
-      const isBoss = t.type === TILE.BOSS;
-      const slab = new THREE.Mesh(isBoss ? roundedSlab(T * 1.08, T * 1.08, 0.2, 0.45, 0.06) : slabGeo,
-        new THREE.MeshStandardMaterial({ color: stone.clone().offsetHSL(0, 0, (Math.sin(i * 12.9) * 0.04)), roughness: 0.85 }));
-      slab.castShadow = true; slab.receiveShadow = true;
-      g.add(slab);
-      const inset = new THREE.Mesh(insetGeo, new THREE.MeshStandardMaterial({ color: TYPE_COLORS[t.type], roughness: 0.6, emissive: TYPE_COLORS[t.type], emissiveIntensity: 0.08 }));
-      inset.position.y = isBoss ? 0.5 : 0.16;
-      inset.receiveShadow = true;
-      g.add(inset);
-      if (icons[t.type]) {
-        const ic = new THREE.Mesh(iconGeo, new THREE.MeshStandardMaterial({ map: tex(`assets/tiles/${icons[t.type]}.webp`), transparent: true, alphaTest: 0.1, roughness: 0.7 }));
-        ic.rotation.x = -Math.PI / 2;
-        ic.rotation.z = Math.PI / 4;
-        ic.position.y = inset.position.y + 0.075;
-        ic.receiveShadow = true;
-        g.add(ic);
+      g.position.set(this.disp[i].x, 0.1, this.disp[i].z);
+      const plat = this.isPlatform(i);
+      const R = i === 0 ? START_R : BOSS_R;
+      let inset;
+      if (plat) {
+        const h = i === 0 ? 0.2 : 0.46;
+        const base = new THREE.Mesh(new THREE.CylinderGeometry(R, R + 0.08, h, 40), new THREE.MeshStandardMaterial({ color: stone.clone().multiplyScalar(0.9), roughness: 0.85 }));
+        base.position.y = h / 2;
+        base.castShadow = true; base.receiveShadow = true;
+        g.add(base);
+        inset = new THREE.Mesh(new THREE.CylinderGeometry(R - 0.14, R - 0.14, 0.04, 40), new THREE.MeshStandardMaterial({ color: TYPE_COLORS[t.type], roughness: 0.55, emissive: TYPE_COLORS[t.type], emissiveIntensity: 0.12 }));
+        inset.position.y = h + 0.02;
+        inset.receiveShadow = true;
+        g.add(inset);
+        const rune = new THREE.Mesh(new THREE.RingGeometry(R - 0.32, R - 0.24, 48), new THREE.MeshBasicMaterial({ color: i === 0 ? 0x9fc4ff : theme.accent, transparent: true, opacity: 0.75, side: THREE.DoubleSide }));
+        rune.rotation.x = -Math.PI / 2;
+        rune.position.y = h + 0.05;
+        g.add(rune);
+        if (i === 0) {
+          this.startRune = rune;
+          const label = this.makeLabel('START', '#dfe9ff');
+          label.position.set(0, h + 0.06, R * 0.55);
+          g.add(label);
+        } else this.bossRune = rune;
+      } else {
+        const slab = new THREE.Mesh(slabGeo, new THREE.MeshStandardMaterial({ color: stone.clone().offsetHSL(0, 0, Math.sin(i * 12.9) * 0.04), roughness: 0.85 }));
+        slab.castShadow = true; slab.receiveShadow = true;
+        g.add(slab);
+        inset = new THREE.Mesh(insetGeo, new THREE.MeshStandardMaterial({ color: TYPE_COLORS[t.type], roughness: 0.6, emissive: TYPE_COLORS[t.type], emissiveIntensity: 0.08 }));
+        inset.position.y = 0.16;
+        inset.receiveShadow = true;
+        g.add(inset);
+        if (icons[t.type]) {
+          const ic = new THREE.Mesh(iconGeo, new THREE.MeshStandardMaterial({ map: tex(`assets/tiles/${icons[t.type]}.webp`), transparent: true, alphaTest: 0.1, roughness: 0.7 }));
+          ic.rotation.x = -Math.PI / 2;
+          ic.rotation.z = Math.PI / 4;
+          ic.position.y = inset.position.y + 0.075;
+          ic.receiveShadow = true;
+          g.add(ic);
+        }
       }
-      // Hit target for tile picking.
-      const hitBox = new THREE.Mesh(new THREE.BoxGeometry(T, 0.6, T), new THREE.MeshBasicMaterial({ visible: false }));
-      hitBox.position.y = 0.2;
+      const hs = plat ? R * 2 : T + 0.1;
+      const hitBox = new THREE.Mesh(new THREE.BoxGeometry(hs, 0.8, hs), new THREE.MeshBasicMaterial({ visible: false }));
+      hitBox.position.y = 0.3;
       hitBox.userData.pickId = i;
       g.add(hitBox);
       this.pickable.push(hitBox);
-      // Direction chevron toward the next tile.
+      // Direction chevron toward the next tile, placed in the gap.
       if (i < tiles.length - 1) {
-        const n = tiles[i + 1];
-        const dir = new THREE.Vector2(t.x - n.x, t.z - n.z);
-        const chev = new THREE.Mesh(new THREE.ConeGeometry(0.09, 0.2, 3), new THREE.MeshStandardMaterial({ color: 0xffffff, emissive: 0xffffff, emissiveIntensity: 0.35 }));
+        const a = this.disp[i], b = this.disp[i + 1];
+        const dir = new THREE.Vector3().subVectors(b, a);
+        const len = dir.length();
+        dir.normalize();
+        const r0 = plat ? R : T / 2, r1 = this.isPlatform(i + 1) ? (i + 1 === bossIdx ? BOSS_R : START_R) : T / 2;
+        const along = r0 + (len - r0 - r1) / 2;
+        const chev = new THREE.Mesh(chevGeo, chevMat);
         chev.rotation.z = -Math.PI / 2;
         const holder = new THREE.Group();
         holder.add(chev);
-        holder.rotation.y = -Math.atan2(dir.y, dir.x);
-        holder.position.set(dir.x * (S / 2), 0.2, dir.y * (S / 2));
-        if (Math.abs(dir.x) + Math.abs(dir.y) === 1) g.add(holder);
+        holder.rotation.y = -Math.atan2(dir.z, dir.x);
+        holder.position.set(dir.x * along, 0.2, dir.z * along);
+        g.add(holder);
       }
       g.userData = { inset, index: i };
       t.group = g;
       this.world.add(g);
     });
 
-    // Boss
-    const bossTile = tiles[this.board.bossIdx];
-    const bp = this.tilePos(this.board.bossIdx);
-    const bossSprite = this.makeSprite(art(game.boss.def.art), 3.2);
-    bossSprite.position.set(bp.x, bp.y, bp.z);
+    // Boss stands at the back of its platform so heroes fit in front.
+    const bp = this.tilePos(bossIdx);
+    const back = new THREE.Vector3().subVectors(this.disp[bossIdx], this.disp[bossIdx - 1]).normalize();
+    const bossSprite = this.makeSprite(art(game.boss.def.art), 3.3);
+    bossSprite.position.set(bp.x + back.x * 0.55, bp.y, bp.z + back.z * 0.55);
     this.world.add(bossSprite);
     this.bossSprite = bossSprite;
-    const ring = new THREE.Mesh(new THREE.RingGeometry(0.62, 0.78, 40), new THREE.MeshBasicMaterial({ color: theme.accent, transparent: true, opacity: 0.8, side: THREE.DoubleSide }));
+    this.bossFront = new THREE.Vector3(-back.x * 0.25, 0, -back.z * 0.25);
+    const ring = new THREE.Mesh(new THREE.RingGeometry(BOSS_R - 0.12, BOSS_R + 0.02, 56), new THREE.MeshBasicMaterial({ color: theme.accent, transparent: true, opacity: 0.8, side: THREE.DoubleSide }));
     ring.rotation.x = -Math.PI / 2;
     ring.position.set(bp.x, bp.y + 0.03, bp.z);
     this.world.add(ring);
     this.bossRing = ring;
-    const bossLight = new THREE.PointLight(theme.accent, 6, 7, 1.6);
-    bossLight.position.set(bp.x, bp.y + 2, bp.z);
+    const bossLight = new THREE.PointLight(theme.accent, 7, 8, 1.6);
+    bossLight.position.set(bp.x, bp.y + 2.2, bp.z);
     this.world.add(bossLight);
     this.bossLight = bossLight;
 
     this.decorate(theme);
-    this.makeMotes(theme);
+    this.makeAtmosphere(game.floor, theme);
     this.syncPlayers(game, true);
     this.syncLoot(game);
-    this.focusTile(0, true);
+    this.camTarget.set(0, 0.6, 0);
+    this.target.copy(this.camTarget);
+    this.zoom = 0.62;
     this.updateCamera();
+    this.zoomTo = 1;
+  }
+
+  // Guild banner texture. main.js can supply a richer painter via setBannerPainter().
+  setBannerPainter(fn) { this.bannerPainter = fn; this._flagCache = {}; }
+  flagTexture(g) {
+    this._flagCache ||= {};
+    const key = `${g.id}:${g.name}`;
+    if (this._flagCache[key]) return this._flagCache[key];
+    const c = document.createElement('canvas');
+    c.width = 128; c.height = 192;
+    const banner = g.banner || { field: g.color, accent: '#f2c443', pattern: 'plain', emblem: 'dragon', emblemColor: '#f4ecdf' };
+    if (this.bannerPainter) this.bannerPainter(c, banner);
+    else {
+      const x = c.getContext('2d');
+      x.fillStyle = '#5a4030'; x.fillRect(60, 0, 8, 192);
+      x.fillStyle = banner.field;
+      x.beginPath(); x.moveTo(14, 16); x.lineTo(114, 16); x.lineTo(114, 170); x.lineTo(64, 140); x.lineTo(14, 170); x.closePath(); x.fill();
+      x.strokeStyle = banner.accent; x.lineWidth = 8; x.stroke();
+    }
+    const t = new THREE.CanvasTexture(c);
+    t.colorSpace = THREE.SRGBColorSpace;
+    this._flagCache[key] = t;
+    return t;
+  }
+
+  makeLabel(text, color) {
+    const c = document.createElement('canvas');
+    c.width = 256; c.height = 64;
+    const x = c.getContext('2d');
+    x.font = '44px "Luckiest Guy", sans-serif';
+    x.textAlign = 'center'; x.textBaseline = 'middle';
+    x.lineWidth = 8; x.strokeStyle = 'rgba(10,8,20,.9)';
+    x.strokeText(text, 128, 34);
+    x.fillStyle = color; x.fillText(text, 128, 34);
+    const t = new THREE.CanvasTexture(c);
+    t.colorSpace = THREE.SRGBColorSpace;
+    const m = new THREE.Mesh(new THREE.PlaneGeometry(1.1, 0.275), new THREE.MeshBasicMaterial({ map: t, transparent: true, depthWrite: false }));
+    m.rotation.x = -Math.PI / 2;
+    m.rotation.z = Math.PI / 4;
+    return m;
   }
 
   makeGroundTexture(theme) {
@@ -300,17 +395,17 @@ export class BoardView {
   }
 
   decorate(theme) {
-    const w = this.board.cols * S, d = this.board.rows * S;
+    const w = this.bounds.w, d = this.bounds.d;
     const pillarMat = new THREE.MeshStandardMaterial({ color: new THREE.Color(theme.ground).lerp(new THREE.Color(0x777777), 0.35), roughness: 0.9 });
     const spots = [];
     const m = 1.5;
     // Pillars and torches along the two far walls only, so nothing blocks the view.
-    for (let k = 0; k <= 6; k++) spots.push([-w / 2 - m, -d / 2 + (k / 6) * (d + m)]);
+    for (let k = 0; k <= 6; k++) spots.push([-w / 2 - m, -d / 2 - m + (k / 6) * (d + m)]);
     for (let k = 1; k <= 6; k++) spots.push([-w / 2 - m + (k / 6) * (w + m), -d / 2 - m]);
     spots.forEach(([x, z], k) => {
       const h = 2.2 + ((k * 37) % 10) / 12;
       const pillar = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.28, h, 8), pillarMat);
-      pillar.position.set(x + S / 2, h / 2, z + S / 2);
+      pillar.position.set(x, h / 2, z);
       pillar.receiveShadow = true;
       pillar.castShadow = true;
       this.world.add(pillar);
@@ -359,18 +454,40 @@ export class BoardView {
     return this._glow;
   }
 
-  makeMotes(theme) {
-    const n = 140;
+  // Per-floor atmosphere: drifting particles with their own behaviour, plus low fog.
+  makeAtmosphere(floor, theme) {
+    const P = {
+      1: { color: 0x9dffb0, n: 120, size: 0.07, vy: 0.22, sway: 0.3, fog: 0x2a4a34, fogN: 10 },   // crypt wisps
+      2: { color: 0xffd98a, n: 220, size: 0.05, vy: 0.02, vx: 0.9, sway: 0.2, fog: 0x6a5230, fogN: 6 }, // blowing sand
+      3: { color: 0xff8a3a, n: 200, size: 0.08, vy: 0.9, sway: 0.5, fog: 0x5a1a0a, fogN: 6 },    // rising embers
+      4: { color: 0xe8ff6a, n: 70, size: 0.1, vy: 0.08, sway: 0.8, fog: 0x2c4a32, fogN: 16, blink: true }, // fireflies in fog
+      5: { color: 0xc89aff, n: 160, size: 0.07, vy: 0.35, sway: 0.6, fog: 0x2a1a4a, fogN: 10 },  // arcane sparks
+    }[floor] || {};
+    const n = P.n;
     const g = new THREE.BufferGeometry();
     const pos = new Float32Array(n * 3);
+    const span = this.extent * 1.3;
     for (let i = 0; i < n; i++) {
-      pos[i * 3] = (Math.random() - 0.5) * this.extent * 1.4;
+      pos[i * 3] = (Math.random() - 0.5) * span;
       pos[i * 3 + 1] = Math.random() * 5;
-      pos[i * 3 + 2] = (Math.random() - 0.5) * this.extent * 1.4;
+      pos[i * 3 + 2] = (Math.random() - 0.5) * span;
     }
     g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
-    this.motes = new THREE.Points(g, new THREE.PointsMaterial({ color: theme.accent, size: 0.06, transparent: true, opacity: 0.7, depthWrite: false }));
+    const mat = new THREE.PointsMaterial({ color: P.color, size: P.size * 1.6, map: this.glowTex(), transparent: true, opacity: 0.9, depthWrite: false, blending: THREE.AdditiveBlending });
+    this.motes = new THREE.Points(g, mat);
+    this.motes.userData = { ...P, span, seeds: Float32Array.from({ length: n }, () => Math.random() * 100) };
     this.world.add(this.motes);
+    // Low fog banks
+    this.fogs = [];
+    for (let i = 0; i < P.fogN; i++) {
+      const f = new THREE.Sprite(new THREE.SpriteMaterial({ map: this.glowTex(), color: P.fog, transparent: true, opacity: 0.35, depthWrite: false }));
+      const sc = 4 + Math.random() * 4;
+      f.scale.set(sc * 1.6, sc * 0.5, 1);
+      f.position.set((Math.random() - 0.5) * span, 0.3 + Math.random() * 0.5, (Math.random() - 0.5) * span);
+      f.userData.v = (Math.random() - 0.5) * 0.25;
+      this.world.add(f);
+      this.fogs.push(f);
+    }
   }
 
   makeSprite(texture, height) {
@@ -403,16 +520,24 @@ export class BoardView {
     ring.rotation.x = -Math.PI / 2;
     ring.position.y = 0.03;
     grp.add(ring);
-    const tok = { group: grp, sprite, ring, shadow, pet: null, petKey: null, hop: 0, flash: 0, flashColor: new THREE.Color(1, 1, 1), base: new THREE.Vector3(), bob: Math.random() * 6 };
+    const flag = new THREE.Sprite(new THREE.SpriteMaterial({ transparent: true, depthWrite: false }));
+    flag.center.set(0.5, 0);
+    flag.position.y = 1.5;
+    flag.scale.set(0.42, 0.62, 1);
+    flag.visible = false;
+    grp.add(flag);
+    const tok = { group: grp, sprite, ring, shadow, flag, flagKey: null, pet: null, petKey: null, hop: 0, flash: 0, flashColor: new THREE.Color(1, 1, 1), base: new THREE.Vector3(), bob: Math.random() * 6 };
     this.world.add(grp);
     return tok;
   }
 
   slotOffset(i, count, k) {
-    if (count <= 1) return new THREE.Vector3();
+    const plat = this.isPlatform(i);
+    const base = i === this.board.bossIdx && this.bossFront ? this.bossFront.clone() : new THREE.Vector3();
+    if (count <= 1) return base;
     const ang = (k / count) * Math.PI * 2 + Math.PI / 4;
-    const r = 0.26;
-    return new THREE.Vector3(Math.cos(ang) * r, 0, Math.sin(ang) * r);
+    const r = plat ? (count > 3 ? 0.58 : 0.42) : 0.26;
+    return base.add(new THREE.Vector3(Math.cos(ang) * r, 0, Math.sin(ang) * r));
   }
 
   syncPlayers(game, snap = false) {
@@ -434,6 +559,12 @@ export class BoardView {
         if (snap || !tok.moving) tok.group.position.copy(target);
         const g = game.guildOf(p);
         tok.ring.material.opacity = g ? 0.95 : 0;
+        const fkey = g ? `${g.id}:${g.name}` : null;
+        if (fkey !== tok.flagKey) {
+          tok.flagKey = fkey;
+          tok.flag.visible = !!g;
+          if (g) { tok.flag.material.map = this.flagTexture(g); tok.flag.material.needsUpdate = true; }
+        }
         if (g) tok.ring.material.color.set(g.color);
       });
     }
@@ -460,7 +591,7 @@ export class BoardView {
     this.activeId = id;
     if (this.game) {
       const p = this.game.players[id];
-      if (p) { this.follow = true; this.focusTile(p.pos); }
+      if (p) this.follow = true;
     }
   }
 
@@ -483,7 +614,6 @@ export class BoardView {
     for (const i of path) {
       const a = tok.group.position.clone();
       const b = this.tilePos(i);
-      if (this.follow && id === this.activeId) this.focusTile(i);
       const dur = speed < 0.05 ? 0 : (how === 'walk' ? 240 : 600) * Math.max(0.15, speed);
       await this.tween(dur, (k) => {
         tok.group.position.lerpVectors(a, b, k);
@@ -616,7 +746,7 @@ export class BoardView {
     if (this.follow && this.activeId != null && this.game) {
       const tok = this.tokens.get(this.activeId);
       if (tok && tok.group.visible) {
-        const w = THREE.MathUtils.clamp(0.3 + (this.zoom - 1) * 0.7, 0.3, 1);
+        const w = THREE.MathUtils.clamp((this.aspect < 1 ? 0.12 : 0.3) + (this.zoom - 1) * 0.7, 0.1, 1);
         const want = new THREE.Vector3(0, 0.6, 0).lerp(tok.group.position, w);
         this.camTarget.lerp(want, 0.05);
       }
@@ -634,10 +764,30 @@ export class BoardView {
       f.light.intensity = 3 * s;
     }
     if (this.motes) {
+      const u = this.motes.userData;
       const a = this.motes.geometry.attributes.position.array;
-      for (let i = 1; i < a.length; i += 3) { a[i] += dt * 0.25; if (a[i] > 5) a[i] = 0; }
+      const half = u.span / 2;
+      for (let i = 0, k = 0; i < a.length; i += 3, k++) {
+        const sd = u.seeds[k];
+        a[i] += (u.vx || 0) * dt + Math.sin(t * 0.8 + sd) * u.sway * dt;
+        a[i + 1] += u.vy * dt;
+        a[i + 2] += Math.cos(t * 0.7 + sd) * u.sway * dt;
+        if (a[i + 1] > 5) a[i + 1] = 0;
+        if (a[i] > half) a[i] = -half;
+      }
       this.motes.geometry.attributes.position.needsUpdate = true;
+      if (u.blink) this.motes.material.opacity = 0.55 + Math.sin(t * 3) * 0.35;
     }
+    for (const f of this.fogs || []) {
+      f.position.x += f.userData.v * dt;
+      if (Math.abs(f.position.x) > this.extent) f.userData.v *= -1;
+    }
+    if (this.zoomTo && Math.abs(this.zoom - this.zoomTo) > 0.002) {
+      this.zoom += (this.zoomTo - this.zoom) * Math.min(1, dt * 1.6);
+      this.updateCamera();
+    }
+    if (this.startRune) this.startRune.rotation.z += dt * 0.4;
+    if (this.bossRune) this.bossRune.rotation.z -= dt * 0.5;
     for (const tok of this.tokens.values()) {
       tok.bob += dt * 3;
       tok.sprite.position.y = Math.abs(Math.sin(tok.bob)) * 0.04;
@@ -651,6 +801,7 @@ export class BoardView {
         tok.sprite.position.x = Math.sin(t * 60) * 0.06 * tok.shake;
       } else tok.sprite.position.x = 0;
       if (tok.pet) tok.pet.position.y = Math.abs(Math.sin(tok.bob * 1.3 + 1)) * 0.08;
+      if (tok.flag.visible) { tok.flag.material.rotation = Math.sin(t * 2 + tok.bob) * 0.06; tok.flag.position.y = 1.5 + tok.sprite.position.y; }
       tok.ring.visible = true;
       if (tok.group.visible && this.activeId != null) {
         const active = this.game && this.game.players[this.activeId] && this.tokens.get(this.activeId) === tok;
