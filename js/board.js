@@ -49,12 +49,15 @@ function ladder(cols, rungs) {
   return cells;
 }
 
+// Boards are narrower than they are deep (they fill a portrait phone), start
+// on the front row and end on the back row, so the boss always stands at the
+// back of the room.
 const SHAPES = {
-  1: () => snakeRows(6, 6),
-  2: () => snakeCols(6, 6),
-  3: () => ladder(7, 5),
-  4: () => ladderCols(7, 5),
-  5: () => snakeRows(7, 5),
+  1: () => snakeRows(5, 7),     // 35 tiles, 5 x 7
+  2: () => snakeCols(5, 7),     // 35 tiles, 5 x 7
+  3: () => ladder(6, 5),        // 34 tiles, 6 x 9 (lava between the rows)
+  4: () => ladderCols(11, 3),   // 35 tiles, 5 x 11 (pools between the columns)
+  5: () => snakeRows(6, 6),     // 36 tiles, 6 x 6
 };
 
 export function buildBoard(floor, rng) {
