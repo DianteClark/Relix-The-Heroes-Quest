@@ -274,6 +274,15 @@ async function showBeat(type, d) {
       return;
     case 'pvpStart': {
       if (!battle) return flow.banner('PvP!', 'red');
+      const ids = d.sides.flat();
+      if (ids.length > 2) {
+        ui.pvpBrawl = true;
+        haptics.impact(2);
+        const fighters = ids.map((id) => { const q = game.players[id], g = game.guildOf(q);
+          return { ...fighter(q), team: g ? 'g' + g.id : 'p' + q.id, guild: g?.name, teamColor: g?.color || g?.banner?.field }; });
+        await battle.open({ kind: 'brawl', fighters, theme: theme() });
+        return tipFor('pvp', ids.map((id) => game.players[id]).find((q) => !q.isBot));
+      }
       const mover = game.players[d.mover];
       const other = d.sides.flat().map((id) => game.players[id]).find((q) => q !== mover && !game.sameGuild(q, mover));
       ui.pvpLeft = mover.id; ui.pvpRight = other.id;
@@ -284,6 +293,14 @@ async function showBeat(type, d) {
     }
     case 'pvpHit': {
       if (!battle?.isOpen) return;
+      if (ui.pvpBrawl) {
+        const loser = game.players[d.loser], to = 'p' + loser.id, hpAfter = Math.max(0, loser.hp - d.dmg);
+        if (d.winner != null) await battle.strikeAt('p' + d.winner, to, { dmg: d.dmg, crit: !!d.crit, hp: hpAfter });
+        else battle.setHpOf(to, hpAfter);
+        haptics.impact(1);
+        if (hpAfter <= 0) await battle.defeatOf(to, d.winner != null ? cos[d.winner]?.killFx || 'none' : 'none');
+        return;
+      }
       const loser = game.players[d.loser];
       const from = game.sameGuild(loser, game.players[ui.pvpLeft]) || loser.id === ui.pvpLeft ? 'right' : 'left';
       const to = from === 'left' ? 'right' : 'left';
@@ -298,6 +315,7 @@ async function showBeat(type, d) {
     }
     case 'pvpEnd':
       ui.pvpLeft = ui.pvpRight = null;
+      ui.pvpBrawl = false;
       if (battle?.isOpen) await battle.close();
       return;
   }
@@ -332,7 +350,8 @@ function onEvent(type, d) {
       view.flash(d.player, d.delta < 0 ? 'hurt' : 'heal');
       floatAt(d.player, d.delta < 0 ? `${d.delta}` : `+${d.delta}`, d.delta < 0 ? 'dmg' : 'heal');
       sfx(d.delta < 0 ? 'hurt' : 'heal');
-      if (battle?.isOpen) {
+      if (battle?.isOpen && ui.pvpBrawl) battle.setHpOf('p' + d.player, game.players[d.player].hp);
+      else if (battle?.isOpen) {
         const side = ui.combat?.player === d.player || ui.pvpLeft === d.player ? 'left' : ui.pvpRight === d.player ? 'right' : null;
         if (side) battle.setHp(side, game.players[d.player].hp);
       }
