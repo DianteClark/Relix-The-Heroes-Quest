@@ -89,8 +89,8 @@ export class Game {
   async wait(ms) { if (this.speed > 0) await this.io.pause?.(ms * this.speed); }
   playersAt(i) { return this.living().filter((p) => p.pos === i); }
   others(p) { return this.living().filter((q) => q !== p); }
-  // Targets for hostile cards: in co-op you can't attack or rob your own party.
-  foes(p) { return this.others(p).filter((q) => !(this.coop() && this.sameGuild(p, q))); }
+  // Targets for hostile cards and skills: only enemies, never your own guild or party.
+  foes(p) { return this.others(p).filter((q) => !this.sameGuild(p, q)); }
 
   lifeOf(p) { const d = p.deaths; return () => !this.over && this.active(p) && p.deaths === d && !this.boss.defeated; }
 
@@ -734,7 +734,7 @@ export class Game {
       this.emit('enemy', { hp: ctx.enemy.hp });
       if (ctx.enemy.kind === 'boss') this.boss.hp = ctx.enemy.hp;
     }
-    const victims = this.others(p).filter((q) => inArea(this.tile(q.pos)) && q.pos !== 0 && !(this.coop() && this.sameGuild(p, q)));
+    const victims = this.foes(p).filter((q) => inArea(this.tile(q.pos)) && q.pos !== 0);
     for (const q of victims) await this.hurt(q, dmg, 'player', p, { from: "Yessi's bomb" });
   }
 

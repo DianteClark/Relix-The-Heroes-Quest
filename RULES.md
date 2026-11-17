@@ -32,8 +32,10 @@ Before each battle roll you may play treasure cards. At the start of a battle yo
 
 - **Monsters:** roll one die per HP the monster has left. Keep rolling until it dies or you do. Beating a monster draws **1 Treasure**.
 - **Bosses:** always 5 dice (Enguxi can lower this). Each turn in the Boss Room is **one** battle roll. Everyone in the room counts toward the same roll counter. On every **3rd roll** the boss's skill fires automatically, before that player acts.
-- **[interpretation]** If your roll kills the enemy, you take no damage from that roll.
-- **[interpretation]** Sword and Large Sword add their bonus only if you rolled at least one hit. Hero skill bonuses always add.
+- If your roll kills the enemy, you take no damage from that roll.
+- Sword and Large Sword add their bonus only if you rolled at least one hit. Hero skill bonuses always add.
+- Your hero skill works once per battle. A whole boss fight counts as one battle, even across turns; after that it comes down to treasures and luck (Refresh lets you use it again).
+- Extra Loot means you draw 2 treasures in total for that monster. Surprise gives no treasure at all.
 - Inner Strength multiplies all the damage you deal that roll: ×2, ×4 with 2 cards, ×6 with 3. Ambush multiplies boss damage by ×3 and stacks with Inner Strength.
 
 ### Bosses
@@ -56,7 +58,7 @@ Before each battle roll you may play treasure cards. At the start of a battle yo
 | Luke | 4 / 5 / 6 | Reduce damage taken this battle roll by 2 / 3 / 5 |
 | Nowtna | 4 / 5 / 6 | Heal yourself or a guild member +3 / +4 / +8 |
 | Shi | 1 / 3 / 5 | 1: draw from the treasure pile · 3: steal 1 from a player · 5: steal 2 (any mix of player and pile) |
-| Yessi | 4 / 5 / 6 | Bomb: 1 dmg to her tile + row neighbours / 1 dmg to her tile + column neighbours / 3 dmg to her tile + all 4 neighbours. Hits monsters, bosses and players. Neighbours are by board position, so other rows of the path can be hit |
+| Yessi | 4 / 5 / 6 | Bomb: 1 dmg to her tile + row neighbours / 1 dmg to her tile + column neighbours / 3 dmg to her tile + all 4 neighbours. Hits monsters, bosses and enemy players (never her own guild). Neighbours are by board position, so other rows of the path can be hit |
 
 ## PvP
 Whenever players who aren't in the same guild share a tile (except Start and the Boss Room), everyone fights. Each side may play cards and rolls a Skill Check. Then each rolls 1 die, and the **highest roll deals 5 damage** to everyone else. Ties re-roll, and each re-roll adds **+5** to the damage.
@@ -73,11 +75,13 @@ Whenever players who aren't in the same guild share a tile (except Start and the
 | Boss | Everything goes to the Boss Room, for whoever kills the boss |
 | Trap | Everything stays on that tile for the next player who lands there |
 
+Anything still left on tiles when the boss falls goes to the player who killed it.
+
 **Standard:** respawn at Start with **40 HP** and draw 1 Treasure (2 if you died in the Boss Room). A Revival Potion in hand triggers automatically: you stay where you are with 40 HP and keep everything. If a guild leader dies, the guild disbands.
 
 ## Guilds (4+ players)
 - Formed with a **Guild Banner**. Invited players must accept. Max size is half the players, rounded down.
-- Members never PvP each other.
+- Members never PvP each other, and bombs, steals, Swap and Yessi's bomb only hit enemies, never guild-mates.
 - In a monster or boss fight, a guild member on the same tile may **reroll your failed dice once per battle**.
 - A guild's Relics count together at the end. A **Guild Bomb** disbands a guild.
 
@@ -90,6 +94,6 @@ Whenever players who aren't in the same guild share a tile (except Start and the
 ## Decks
 **Treasure (80):** Potion 13 · Super Potion 6 · Ultra Potion 1 · Shield 4 · Large Shield 1 · Sword 3 · Large Sword 1 · Inner Strength 4 · Ambush 1 · Reroll 3 · Refresh 3 · Killshot 4 · Extra Loot 4 · Bomb 4 · Mega Bomb 1 · Skill Counter 4 · Steal 1 · Quick Hands 3 · Swap 1 · Guild Banner 2 · Guild Bomb 2 · Hyperspeed 1 · Trickster 2 · Fast Travel 3 · Trap Resist 4 · Revival Potion 1 · Golem (pet) 1 · Tezuki (pet) 1 · Kezz (pet) 1
 
-**Trap (40):** Roar 1 · Giant Boulder 1 · Land Slide 1 · Double Loss 1 · Restart 2 · Boulder 2 · Let Down 2 · Lose a Turn 2 · Surprise 2 · Fumble 2 · Misstep 2 · Endless Pit 3 · Skill Counter 3 · Double Battle 3 · Spike Trap 3 · Bat Swarm 5 · Poison Dart 5
+**Trap (40):** Roar 1 · Giant Boulder 1 · Land Slide 1 · Double Loss 1 · Endless Pit 1 (legendary) · Restart 2 · Let Down 2 · Lose a Turn 2 · Surprise 2 · Fumble 2 · Misstep 2 · Boulder 3 · Skill Counter 3 · Double Battle 3 · Spike Trap 4 · Bat Swarm 5 · Poison Dart 5
 
 **Pets** grow into their next form (looks only) each time a boss is defeated while you have them equipped. Goblin and Kitsune have 3 forms; the Golem has 2.
