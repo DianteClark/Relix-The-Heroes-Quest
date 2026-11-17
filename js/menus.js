@@ -150,6 +150,7 @@ const ON_SHOW = {};
 let current = null;
 const layers = []; // {kind:'screen', from} | {kind:'overlay', close}
 const popWaiters = [];
+let popSeq = 0;
 const elOf = (id) => document.getElementById(SCREENS[id] || id);
 const menusVisible = () => !!current && !!elOf(current)?.classList.contains('active');
 
@@ -168,6 +169,7 @@ function pushLayer(layer) {
   try { history.pushState({ relixMenu: layers.length }, ''); } catch (e) { /* sandboxed */ }
 }
 function unwindTo(depth) {
+  popSeq++;
   while (layers.length > depth) {
     const l = layers.pop();
     if (l.kind === 'overlay') l.close(); else setScreen(l.from, -1);
@@ -182,10 +184,10 @@ function goBack() {
       res(); return;
     }
     popWaiters.push(res);
-    const n = layers.length;
+    const n = layers.length, seq = popSeq;
     try { history.back(); } catch (e) { /* ignore */ }
     // Safety net: if popstate never comes (embedded webviews), unwind ourselves.
-    setTimeout(() => { if (layers.length === n) unwindTo(n - 1); }, 450);
+    setTimeout(() => { if (popSeq === seq && layers.length === n) unwindTo(n - 1); }, 450);
   });
 }
 function navTo(id) {
@@ -281,12 +283,12 @@ function screenShell(id, title, { coins = true, foot = '', cls = '' } = {}) {
 
 // ================================================================= TITLE
 const LINEUP = [
-  { id: 'shi', x: 10, row: 'back', h: 0.62 },
-  { id: 'nowtna', x: 88, row: 'back', h: 0.64 },
-  { id: 'josue', x: 50, row: 'back', h: 0.6 },
-  { id: 'yessi', x: 24, row: 'front', h: 0.8 },
-  { id: 'chan_kong', x: 76, row: 'front', h: 0.82 },
-  { id: 'luke', x: 50, row: 'front', h: 0.9, hero: true },
+  { id: 'shi', x: 13, row: 'back', h: 0.5 },
+  { id: 'josue', x: 87, row: 'back', h: 0.5 },
+  { id: 'nowtna', x: 50, row: 'back', h: 0.46 },
+  { id: 'yessi', x: 25, row: 'front', h: 0.62 },
+  { id: 'chan_kong', x: 75, row: 'front', h: 0.64 },
+  { id: 'luke', x: 50, row: 'front', h: 0.72, hero: true },
 ];
 const T = { raf: 0, emb: [], sprite: null, px: 0, py: 0, tx: 0, ty: 0, last: 0, cv: null, ctx: null, w: 0, h: 0, intro: false };
 
@@ -805,7 +807,8 @@ function buildCustomize() {
       <div class="m-tabs cz-tabs">${TABS.map(([id, l]) => `<button data-act="cz-tab" data-id="${id}">${l}</button>`).join('')}</div>
       <div class="cz-content"></div>
     </div>`;
-  CZ.anim = animateBanner($('.cz-banner', el), czBanner, { w: 150, h: 214, reduced: reducedMotion });
+  const wide = matchMedia('(orientation: landscape) and (min-width: 820px)').matches;
+  CZ.anim = animateBanner($('.cz-banner', el), czBanner, { w: wide ? 210 : 150, h: wide ? 300 : 214, reduced: reducedMotion });
   CZ.stage = new FxStage($('.cz-fx', el));
   el.addEventListener('input', (e) => {
     if (e.target.matches('.cz-name')) { const p = loadProfile(); p.banner.name = e.target.value.slice(0, 18); saveProfile(p); }
@@ -1018,7 +1021,7 @@ function buildSettings() {
 function renderSettings() {
   const el = elOf('settings');
   const s = loadProfile().settings;
-  const slider = (k, label) => `<div class="st-row"><span class="st-l">${label}</span><input type="range" class="m-range" min="0" max="100" step="1" value="${Math.round(s[k] * 100)}" data-vol="${k}" style="--v:${Math.round(s[k] * 100)}%" aria-label="${label}"><b class="st-v" data-volv="${k}">${Math.round(s[k] * 100)}%</b></div>`;
+  const slider = (k, label) => `<div class="st-row"><span class="st-l st-ls">${label}</span><input type="range" class="m-range" min="0" max="100" step="1" value="${Math.round(s[k] * 100)}" data-vol="${k}" style="--v:${Math.round(s[k] * 100)}%" aria-label="${label}"><b class="st-v" data-volv="${k}">${Math.round(s[k] * 100)}%</b></div>`;
   const tog = (k, label, sub) => `<button class="st-row st-tog" data-act="st-tog" data-k="${k}" role="switch" aria-checked="${!!s[k]}"><span class="st-l">${label}${sub ? `<small>${sub}</small>` : ''}</span><span class="m-switch ${s[k] ? 'on' : ''}"><i></i></span></button>`;
   $('.m-body', el).innerHTML = `<div class="m-wrap">
     <section class="m-panel"><h3 class="m-h">Audio</h3>${slider('music', 'Music')}${slider('sfx', 'Sound effects')}</section>

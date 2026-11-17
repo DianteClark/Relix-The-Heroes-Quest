@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
+  <title>Relix menus: dev</title>
+  <meta name="theme-color" content="#16121f">
+  <base href="../">
+  <link rel="stylesheet" href="css/style.css">
+  <link rel="stylesheet" href="css/menus.css">
+  <style>
+    /* ?safe emulates the iPhone 16 Pro safe areas */
+    html.emu-safe { --m-sat: 59px; --m-sab: 34px; }
+    html.emu-safe body::before { content: ''; position: fixed; left: 50%; top: 11px; width: 124px; height: 36px; margin-left: -62px; border-radius: 20px; background: #000; z-index: 99; pointer-events: none; }
+    html.emu-safe body::after { content: ''; position: fixed; left: 50%; bottom: 8px; width: 140px; height: 5px; margin-left: -70px; border-radius: 3px; background: rgba(255,255,255,.7); z-index: 99; pointer-events: none; }
+    #devbar { position: fixed; z-index: 70; left: 8px; top: 50%; transform: translateY(-50%); display: flex; flex-direction: column; gap: 6px; }
+    #devbar.closed > :not(#devToggle) { display: none; }
+    #devbar button { min-height: 40px; padding: 0 10px; border-radius: 10px; border: 1px solid #6b5689; background: rgba(20,14,30,.92); color: #f2c443; font: 800 12px Nunito, sans-serif; }
+    #devlog { position: fixed; z-index: 70; right: 6px; bottom: 6px; max-width: 46vw; font: 11px/1.3 monospace; color: #9f9; background: rgba(0,0,0,.6); padding: 4px 6px; border-radius: 6px; pointer-events: none; white-space: pre; }
+    #game { background: #0b0712; color: #f4ecdf; padding: 80px 20px; font-family: Nunito, sans-serif; }
+    #game.active { display: block; overflow: auto; }
+    #game pre { white-space: pre-wrap; font-size: 12px; background: #1b1526; padding: 10px; border-radius: 10px; }
+  </style>
+</head>
+<body>
+  <section id="title" class="screen active"></section>
+  <section id="setup" class="screen"></section>
+  <section id="game" class="screen"><h2>Game would start with:</h2><div id="gameBanners"></div><pre id="gameCfg"></pre><button class="m-btn gold" id="backToTitle">Return to title (showMenu)</button></section>
+
+  <div id="devbar" class="closed">
+    <button id="devToggle">DEV</button>
+    <button data-dev="invite">Invite scroll</button>
+    <button data-dev="name">Name guild</button>
+    <button data-dev="coins">+500 coins</button>
+    <button data-dev="reset">Reset profile</button>
+    <button data-dev="safe">Toggle safe area</button>
+  </div>
+  <div id="devlog"></div>
+
+  <script type="module">
+    import { initMenus, showMenu } from './js/menus.js';
+    import { inviteScroll, nameGuild } from './js/guildui.js';
+    import { awardCoins, resetProfile, loadProfile } from './js/profile.js';
+    import { SEAT_BANNERS } from './js/cosmetics.js';
+    import { drawBanner } from './js/banner.js';
+
+    const qs = new URLSearchParams(location.search);
+    if (qs.has('safe')) document.documentElement.classList.add('emu-safe');
+    if (qs.has('nodev')) { document.getElementById('devbar').remove(); document.getElementById('devlog').remove(); }
+    const log = [];
+    const say = (s) => { log.push(s); if (log.length > 6) log.shift(); const el = document.getElementById('devlog'); if (el) el.textContent = log.join('\n'); };
+
+    const audio = {
+      unlock() { say('audio.unlock'); },
+      sfx(n) { say(`sfx ${n}`); },
+      music(id) { say(`music ${id}`); },
+      setVolume(v) { say(`setVolume ${JSON.stringify(v)}`); },
+    };
+    window.addEventListener('relix:sfx', (e) => say(`event sfx ${e.detail.name}`));
+
+    function startGame(cfg) {
+      window.__lastConfig = cfg;
+      document.querySelectorAll('.screen').forEach((s) => s.classList.toggle('active', s.id === 'game'));
+      document.getElementById('gameCfg').textContent = JSON.stringify(cfg, null, 2);
+      const box = document.getElementById('gameBanners'); box.innerHTML = '';
+      cfg.players.forEach((p) => { const c = document.createElement('canvas'); box.append(c); drawBanner(c, p.banner, { w: 48, h: 64 }); });
+      say(`startGame ${cfg.players.length}p ${cfg.mode}`);
+    }
+    document.getElementById('backToTitle').onclick = () => showMenu('title');
+
+    initMenus({ startGame, audio });
+
+    const actions = {
+      invite: async () => say('invite → ' + await inviteScroll({ from: { name: 'Luke', art: 'luke', banner: loadProfile().banner }, to: { name: 'Yessi', art: 'yessi' }, guildName: 'The Iron Wolves' })),
+      name: async () => say('name → ' + await nameGuild({ leader: { name: 'Chan Kong', art: 'chan_kong' }, banner: SEAT_BANNERS[3], suggested: 'Crimson Fangs' })),
+      coins: () => { awardCoins(500); say('coins ' + loadProfile().coins); },
+      reset: () => { resetProfile(); showMenu('title'); },
+      safe: () => document.documentElement.classList.toggle('emu-safe'),
+    };
+    window.dev = { ...actions, showMenu, inviteScroll, nameGuild };
+    document.getElementById('devToggle')?.addEventListener('click', () => document.getElementById('devbar').classList.toggle('closed'));
+    document.querySelectorAll('[data-dev]').forEach((b) => b.addEventListener('click', () => actions[b.dataset.dev]()));
+  </script>
+</body>
+</html>
