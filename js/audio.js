@@ -38,9 +38,11 @@ export const TRACKS = {
 // Per-SFX output trim, measured with OfflineAudioContext (dev/audio.html "Measure") so peaks land on
 // category targets (UI ≈ -12 dBFS, foley ≈ -8, impacts ≈ -4, big moments ≈ -3).
 const LEVEL = {
-  tap: 1, back: 1, open: 1, card_flip: 1, card_draw: 1, coin: 1, dice_throw: 1, dice_hit: 1, dice_settle: 1,
-  step: 1, hit: 1, crit: 1, miss: 1, ko: 1, whoosh: 1, vs: 1, heal: 1, hurt: 1, trap: 1, boss_roar: 1,
-  boss_skill: 1, relic: 1, victory: 1, defeat: 1, pvp: 1, guild: 1, scroll: 1, error: 1, turn: 1,
+  tap: 0.389, back: 0.475, open: 1.332, card_flip: 0.729, card_draw: 0.612, coin: 0.681, dice_throw: 2.148,
+  dice_hit: 0.518, dice_settle: 0.685, step: 0.836, hit: 0.412, crit: 0.366, miss: 1.694, ko: 0.511,
+  whoosh: 1.708, vs: 0.36, heal: 1.184, hurt: 0.515, trap: 0.323, boss_roar: 0.512, boss_skill: 0.468,
+  relic: 1.054, victory: 0.639, defeat: 0.744, pvp: 0.376, guild: 0.851, scroll: 2.267, error: 0.78,
+  turn: 1.005,
 };
 const DUCK = { relic: [0.3, 1.6], boss_roar: [0.3, 1.8], victory: [0.25, 2.2], defeat: [0.3, 2.2], vs: [0.55, 0.8], crit: [0.6, 0.5], boss_skill: [0.45, 1.2] };
 // Max simultaneous voices per name (physics can spam dice_hit).
@@ -558,40 +560,40 @@ export const THEMES = {
     drums: { taiko: 'X.......x...X...', snare: '....x.......x..o', hat: 'x.x.x.x.x.x.x.x.' },
     lead: { inst: 'brass', oct: 2, g: 0.13, range: [0, 9], restP: 0.1 }, counter: { inst: 'bell', oct: 3, g: 0.05 },
     form: [['pad', 'bass', 'drums'], ['pad', 'bass', 'drums', 'lead'], ['pad', 'bass', 'drums', 'lead', 'counter'], ['pad', 'drums', 'lead2'], ['pad', 'bass', 'drums', 'lead']] },
-  tavern: { bpm: 112, root: 43, mode: 'ionian', prog: [0, 3, 4, 0, 5, 3, 4, 4], gain: 1.0, swing: 0.12,
+  tavern: { bpm: 112, root: 43, mode: 'ionian', prog: [0, 3, 4, 0, 5, 3, 4, 4], gain: 1.5, swing: 0.12,
     pad: { g: 0.03, ff: 900 }, bass: { pat: 'X...x...X...x...', g: 0.2, inst: 'pluck' },
     arp: { pat: 'x.x.x.x.x.x.x.x.', g: 0.11, oct: 2, inst: 'pluck' },
     drums: { dum: 'X.....x.X.......', tek: '....x.......x...', shaker: 'x.o.x.o.x.o.x.o.' },
     lead: { inst: 'flute', oct: 2, g: 0.09, range: [2, 11], restP: 0.15 },
     form: [['pad', 'bass', 'arp'], ['pad', 'bass', 'arp', 'drums', 'lead'], ['bass', 'arp', 'drums', 'lead2'], ['pad', 'bass', 'arp', 'drums', 'lead']] },
-  crypt: { bpm: 76, root: 45, mode: 'aeolian', prog: [0, 5, 3, 4], gain: 1.0,
+  crypt: { bpm: 76, root: 45, mode: 'aeolian', prog: [0, 5, 3, 4], gain: 1.45,
     choir: { g: 0.035 }, drone: { g: 0.09 }, bass: { pat: 'X...............', g: 0.2 },
     drums: { boom: 'X...............', tek: '........x.......' },
     lead: { inst: 'bell', oct: 3, g: 0.07, range: [0, 8], restP: 0.35 }, counter: { inst: 'pluck', oct: 2, g: 0.14 },
     form: [['choir', 'drone'], ['choir', 'drone', 'drums', 'lead'], ['choir', 'bass', 'drums', 'lead', 'counter'], ['choir', 'drone', 'lead2']] },
-  sand: { bpm: 96, root: 38, mode: 'hijaz', prog: [0, 0, 1, 0, 6, 1, 0, 0], gain: 1.0, swing: 0.06,
+  sand: { bpm: 96, root: 38, mode: 'hijaz', prog: [0, 0, 1, 0, 6, 1, 0, 0], gain: 1.15, swing: 0.06,
     drone: { g: 0.09 }, pad: { g: 0.035, ff: 900 }, hive: { g: 0.025 }, wind: { g: 0.05 },
     bass: { pat: 'X.....x...X.....', g: 0.2 },
     drums: { dum: 'X.....x...X.....', tek: '...x..x.x..x..xx', shaker: 'x.o.x.o.x.o.x.oo' },
     lead: { inst: 'pluck', oct: 2, g: 0.2, range: [0, 10], restP: 0.12, orn: 0.35 }, counter: { inst: 'bell', oct: 3, g: 0.04 },
     form: [['drone', 'pad', 'wind', 'hive'], ['drone', 'pad', 'drums', 'wind'], ['drone', 'pad', 'drums', 'bass', 'lead'], ['pad', 'drums', 'bass', 'lead', 'counter', 'hive'], ['drone', 'pad', 'drums', 'bass', 'lead2'], ['drone', 'pad', 'wind', 'lead']] },
-  forge: { bpm: 84, root: 40, mode: 'phrygian', prog: [0, 0, 1, 0, 5, 6, 1, 0], gain: 1.0,
-    choir: { g: 0.03 }, drone: { g: 0.1 }, embers: { g: 0.05 }, stab: { pat: 'X...............', g: 0.09 },
+  forge: { bpm: 84, root: 40, mode: 'phrygian', prog: [0, 0, 1, 0, 5, 6, 1, 0], gain: 0.78,
+    choir: { g: 0.035 }, drone: { g: 0.065 }, embers: { g: 0.05 }, stab: { pat: 'X...............', g: 0.09 },
     bass: { pat: 'X..x..x.X.......', g: 0.24 },
     drums: { taiko: 'X..x..x.X...x...', anvil: '....X.......X..o', boom: 'X...............' },
     lead: { inst: 'brass', oct: 1, g: 0.12, range: [0, 7], restP: 0.25 },
     form: [['drone', 'embers', 'drums'], ['drone', 'choir', 'drums', 'bass', 'embers'], ['choir', 'drums', 'bass', 'stab', 'lead'], ['choir', 'drums', 'bass', 'stab', 'lead2', 'embers'], ['drone', 'choir', 'drums', 'embers']] },
-  mire: { bpm: 70, root: 43, mode: 'dorian', prog: [0, 0, 3, 6, 0, 4, 3, 0], gain: 1.0,
+  mire: { bpm: 70, root: 43, mode: 'dorian', prog: [0, 0, 3, 6, 0, 4, 3, 0], gain: 1.45,
     drone: { g: 0.08 }, pad: { g: 0.035, ff: 700 }, wind: { g: 0.04 }, bass: { pat: 'X.......x.......', g: 0.18, inst: 'pluck' },
     drums: { dum: 'X.........x.....', shaker: '..o...o...o...o.' },
     lead: { inst: 'flute', oct: 2, g: 0.08, range: [0, 8], restP: 0.3 }, counter: { inst: 'pluck', oct: 2, g: 0.13 },
     form: [['drone', 'pad', 'wind'], ['drone', 'pad', 'bass', 'drums', 'counter'], ['pad', 'bass', 'drums', 'lead'], ['drone', 'pad', 'bass', 'drums', 'lead2', 'counter']] },
-  sanctum: { bpm: 68, root: 35, mode: 'harmonic', prog: [0, 5, 3, 4], gain: 1.0,
-    choir: { g: 0.04 }, drone: { g: 0.1 }, swell: { g: 0.06 }, bass: { pat: 'X...............', g: 0.22 },
+  sanctum: { bpm: 68, root: 35, mode: 'harmonic', prog: [0, 5, 3, 4], gain: 1.5,
+    choir: { g: 0.045 }, drone: { g: 0.07 }, swell: { g: 0.06 }, bass: { pat: 'X...............', g: 0.22 },
     drums: { boom: 'X.......x.......', hat: '..o...o...o...o.', tek: '............x...' },
     lead: { inst: 'bell', oct: 3, g: 0.075, range: [0, 9], restP: 0.3 }, counter: { inst: 'choirlead', oct: 2, g: 0.05 },
     form: [['choir', 'drone', 'swell'], ['choir', 'drone', 'drums', 'lead'], ['choir', 'bass', 'drums', 'lead', 'swell'], ['choir', 'drone', 'bass', 'drums', 'lead2', 'counter'], ['choir', 'drone', 'swell']] },
-  boss: { bpm: 138, root: 40, mode: 'phrygian', prog: [0, 0, 1, 0, 5, 6, 1, 4], gain: 1.0,
+  boss: { bpm: 138, root: 40, mode: 'phrygian', prog: [0, 0, 1, 0, 5, 6, 1, 4], gain: 0.62,
     choir: { g: 0.035 }, stab: { pat: 'X.....X.....X...', g: 0.09 }, bass: { pat: 'x.x.x.x.x.x.x.x.', g: 0.2 },
     drums: { kick: 'X..x..x.X.x...x.', snare: '....X.......X...', taiko: 'X.......X.....x.', hat: 'x.xxx.xxx.xxx.xx', anvil: '..............X.' },
     lead: { inst: 'brass', oct: 2, g: 0.11, range: [0, 8], restP: 0.08 },
@@ -607,7 +609,7 @@ class ProcTrack {
     this.rng = mulberry(seed ?? (Math.random() * 1e9) | 0);
     this.out = gainNode(ctx, 0, dest); // dry fade
     this.wout = gainNode(ctx, 0, verb); // reverb-send fade (so crossfades also silence the send)
-    this.mix = gainNode(ctx, 0.9 * (this.th.gain || 1), this.out);
+    this.mix = gainNode(ctx, 0.72 * (this.th.gain || 1), this.out);
     this.V = { ctx, out: this.mix, wet: gainNode(ctx, 0.6 * (this.th.gain || 1), this.wout), t: 0 };
     this.stepDur = 60 / this.th.bpm / 4;
     this.n = 0; this.next = 0; this.timer = null; this.phrases = {}; this.mel = null; this.ctr = null;
@@ -866,7 +868,8 @@ function buildBuses(c, live) {
   b.sfxBus = gainNode(c, live ? curve(vol.sfx) : 1, b.master);
   b.sfxVerb = c.createConvolver(); b.sfxVerb.buffer = impulse(c, 1.8, 0.65); b.sfxVerb.connect(gainNode(c, 0.55, b.sfxBus));
   b.duckBus = gainNode(c, 1, b.master);
-  b.musicBus = gainNode(c, live ? curve(vol.music) : 1, b.duckBus);
+  const hp = c.createBiquadFilter(); hp.type = 'highpass'; hp.frequency.value = 38; hp.Q.value = 0.6; hp.connect(b.duckBus);
+  b.musicBus = gainNode(c, live ? curve(vol.music) : 1, hp);
   b.musicVerb = c.createConvolver(); b.musicVerb.buffer = impulse(c, 3.2, 0.7, 0.02); b.musicVerb.connect(gainNode(c, 0.45, b.musicBus));
   return b;
 }

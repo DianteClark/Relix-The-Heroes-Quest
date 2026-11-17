@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Relix · Audio test bench</title>
+<link rel="icon" href="data:,">
+<style>
+  :root { --gold: #f2c443; --bg: #120a1e; --panel: #1f1430; --brown: #5c5046; }
+  * { box-sizing: border-box; }
+  body { margin: 0; background: radial-gradient(circle at 50% 0, #2a1840, var(--bg) 70%); color: #eee; font: 600 15px/1.35 Nunito, system-ui, sans-serif;
+    padding: calc(env(safe-area-inset-top) + 12px) 12px calc(env(safe-area-inset-bottom) + 24px); min-height: 100vh; }
+  h1 { font: 28px 'Luckiest Guy', Impact, sans-serif; color: var(--gold); margin: 4px 0 2px; letter-spacing: 1px; }
+  h2 { font-size: 13px; text-transform: uppercase; letter-spacing: 2px; color: #b9a6d6; margin: 18px 0 8px; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(104px, 1fr)); gap: 8px; }
+  button { min-height: 44px; border: 1px solid #4a3866; background: var(--panel); color: #f3eaff; border-radius: 10px; font: inherit; cursor: pointer;
+    touch-action: manipulation; padding: 6px 8px; }
+  button:active { transform: scale(.97); background: #2c1d45; }
+  button.on { border-color: var(--gold); color: var(--gold); box-shadow: 0 0 12px #f2c44355; }
+  button.wide { padding: 0 18px; }
+  .row { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; }
+  label { display: flex; gap: 8px; align-items: center; min-height: 44px; }
+  input[type=range] { width: 140px; accent-color: var(--gold); min-height: 32px; }
+  #state { color: #b9a6d6; font-size: 13px; }
+  table { border-collapse: collapse; font: 12px ui-monospace, monospace; width: 100%; }
+  td, th { padding: 3px 6px; border-bottom: 1px solid #2c1d45; text-align: right; }
+  td:first-child, th:first-child { text-align: left; }
+  .bad { color: #ff6a6a; } .ok { color: #8fe08f; }
+</style>
+</head>
+<body>
+<h1>Relix Audio</h1>
+<div id="state">tap anything to unlock audio</div>
+
+<h2>Volume</h2>
+<div class="row">
+  <label>Music <input id="vm" type="range" min="0" max="1" step="0.01"></label>
+  <label>SFX <input id="vs" type="range" min="0" max="1" step="0.01"></label>
+</div>
+<div class="row">
+  <label>Intensity <input id="oi" type="range" min="0" max="1.5" step="0.05" value="1"></label>
+  <label>Pitch <input id="op" type="range" min="0.5" max="2" step="0.05" value="1"></label>
+  <label>Pan <input id="opan" type="range" min="-1" max="1" step="0.1" value="0"></label>
+</div>
+
+<h2>Music</h2>
+<div class="grid" id="tracks"></div>
+<div class="row" style="margin-top:8px"><button class="wide" id="stop">Stop music</button><button class="wide" id="evt">Fire relix:sfx dice burst</button></div>
+
+<h2>SFX</h2>
+<div class="grid" id="sfx"></div>
+
+<h2>Offline measurement</h2>
+<div class="row"><button class="wide" id="measure">Measure all SFX</button><button class="wide" id="measureM">Measure procedural music</button></div>
+<div id="report"></div>
+
+<script type="module">
+  import { audio, THEMES } from '../js/audio.js';
+  window.audio = audio;
+  const $ = (id) => document.getElementById(id);
+  const opts = () => ({ intensity: +$('oi').value, pitch: +$('op').value, pan: +$('opan').value });
+
+  const vols = audio.volumes;
+  $('vm').value = vols.music; $('vs').value = vols.sfx;
+  $('vm').oninput = () => audio.setVolume({ music: +$('vm').value });
+  $('vs').oninput = () => audio.setVolume({ sfx: +$('vs').value });
+
+  for (const id of Object.keys(audio.TRACKS)) {
+    const b = document.createElement('button');
+    const t = audio.TRACKS[id];
+    b.textContent = id + (t.file ? '' : ' ✦');
+    b.title = t.file ? t.file : 'procedural: ' + t.proc;
+    b.dataset.track = id;
+    b.onclick = async () => { await audio.unlock(); audio.music(id); };
+    $('tracks').append(b);
+  }
+  for (const n of audio.SFX_NAMES) {
+    const b = document.createElement('button');
+    b.textContent = n; b.dataset.sfx = n;
+    b.onclick = async () => { await audio.unlock(); audio.sfx(n, opts()); };
+    $('sfx').append(b);
+  }
+  $('stop').onclick = () => audio.stopMusic();
+  $('evt').onclick = async () => {
+    await audio.unlock();
+    window.dispatchEvent(new CustomEvent('relix:sfx', { detail: { name: 'dice_throw', intensity: 1 } }));
+    [0.35, 0.5, 0.6, 0.68, 0.74].forEach((d, k) => setTimeout(() => window.dispatchEvent(new CustomEvent('relix:sfx', { detail: { name: 'dice_hit', intensity: 1 - k * 0.18 } })), d * 1000));
+    setTimeout(() => window.dispatchEvent(new CustomEvent('relix:sfx', { detail: { name: 'dice_settle', intensity: 0.6 } })), 900);
+  };
+  setInterval(() => {
+    $('state').textContent = `context: ${audio.state} · music: ${audio.current || '—'} · volumes ${JSON.stringify(audio.volumes)}`;
+    document.querySelectorAll('[data-track]').forEach((b) => b.classList.toggle('on', b.dataset.track === audio.current));
+  }, 250);
+
+  const db = (x) => (20 * Math.log10(x + 1e-12));
+  function stats(buf) {
+    let pk = 0, ss = 0, n = 0, start = -1, end = 0;
+    for (let c = 0; c < buf.numberOfChannels; c++) {
+      const d = buf.getChannelData(c);
+      for (let i = 0; i < d.length; i++) { const a = Math.abs(d[i]); if (a > pk) pk = a; if (a > 0.003) { if (start < 0 || i < start) start = i; if (i > end) end = i; } }
+    }
+    // RMS over the audible part (first sample above -50 dB to last)
+    for (let c = 0; c < buf.numberOfChannels; c++) { const d = buf.getChannelData(c); for (let i = Math.max(0, start); i <= end; i++) { ss += d[i] * d[i]; n++; } }
+    return { peak: db(pk), rms: db(Math.sqrt(ss / Math.max(1, n))), len: (end - Math.max(0, start)) / buf.sampleRate, nan: !isFinite(pk) };
+  }
+  window.measureSfx = async (runs = 6) => {
+    const out = {};
+    for (const n of audio.SFX_NAMES) {
+      let peak = -200, rms = -200, len = 0, nan = false;
+      for (let r = 0; r < runs; r++) {
+        const s = stats(await audio.renderSfxOffline(n, { intensity: 1 }));
+        peak = Math.max(peak, s.peak); rms = Math.max(rms, s.rms); len = Math.max(len, s.len); nan ||= s.nan;
+      }
+      out[n] = { peak: +peak.toFixed(2), rms: +rms.toFixed(2), len: +len.toFixed(2), nan };
+    }
+    return out;
+  };
+  window.measureMusic = async (secs = 24) => {
+    const out = {};
+    for (const th of [...Object.keys(THEMES), 'victory', 'defeat']) {
+      const s = stats(await audio.renderMusicOffline(th, secs));
+      out[th] = { peak: +s.peak.toFixed(2), rms: +s.rms.toFixed(2), nan: s.nan };
+    }
+    return out;
+  };
+  function table(obj) {
+    const cols = Object.keys(Object.values(obj)[0]);
+    let h = '<table><tr><th>name</th>' + cols.map((c) => `<th>${c}</th>`).join('') + '</tr>';
+    for (const [k, v] of Object.entries(obj)) {
+      const bad = v.peak > -0.5 || v.peak < -40 || v.nan;
+      h += `<tr class="${bad ? 'bad' : 'ok'}"><td>${k}</td>` + cols.map((c) => `<td>${v[c]}</td>`).join('') + '</tr>';
+    }
+    return h + '</table>';
+  }
+  $('measure').onclick = async () => { $('report').textContent = 'rendering…'; $('report').innerHTML = table(await window.measureSfx(3)); };
+  $('measureM').onclick = async () => { $('report').textContent = 'rendering…'; $('report').innerHTML = table(await window.measureMusic(16)); };
+</script>
+</body>
+</html>
