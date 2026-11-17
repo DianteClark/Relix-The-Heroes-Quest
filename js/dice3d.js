@@ -286,10 +286,19 @@ export function planRoll({ values, tray, spec, rnd = Math.random }) {
     const sim = simulate(n, tray, starts);
     sim.starts = starts;
     sim.raw = sim.frames.length * FRAME_DT;
-    const better = !best || sim.bad < best.bad || (sim.bad === best.bad && sim.raw < best.raw);
-    if (better) best = sim;
-    // accept a clean roll right away unless it is a long one (then try a couple more for a snappier roll)
-    if (best.valid && (best.raw < 2.1 || a >= 3)) break;
+    // score: prefer quick rolls that end spread out near the middle of the tray, not jammed into a wall
+    const zMid = (tray.zFar + tray.zNear) / 2; const hz = (tray.zNear - tray.zFar) / 2;
+    const last = sim.frames[sim.frames.length - 1];
+    let cx = 0; let cz = 0; let wallPen = 0;
+    for (let i = 0; i < n; i++) {
+      const x = last[i * 7]; const z = last[i * 7 + 2];
+      cx += x / n; cz += (z - zMid) / n;
+      if (tray.hx - Math.abs(x) < 0.75) wallPen += 0.35;
+      if (hz - Math.abs(z - zMid) < 0.75) wallPen += 0.35;
+    }
+    sim.score = sim.bad * 100 + Math.max(0, sim.raw - 1.1) * 1.4 + Math.hypot(cx / tray.hx, cz / hz) * 1.2 + wallPen / Math.sqrt(n);
+    if (!best || sim.score < best.score) best = sim;
+    if (best.valid && (best.score < 0.7 || (a >= 1 && best.score < 1.5) || a >= 2)) break;
   }
   finalize(best);
   best.layouts = best.finals.map((f, i) => pickLayout(f.slot, values[i], rnd));
@@ -310,7 +319,7 @@ const RESULT = {
   cmiss: { color: '#9b1426', label: 'CRIT MISS' },
   trigger: { color: '#f2c443', label: 'SKILL' },
   dim: { color: '#7d7689', label: '' },
-  neutral: { color: '#ffe9b0', label: '' },
+  neutral: { color: '#f2c443', label: '' },
 };
 function classify(kind, v, triggers) {
   if (kind === 'combat') return v === 6 ? 'crit' : v >= 4 ? 'hit' : v === 1 ? 'cmiss' : 'miss';
@@ -319,6 +328,7 @@ function classify(kind, v, triggers) {
 }
 
 const BEVEL = 0.13;
+const HAND_SCALE = 0.8;
 function roundedBoxGeometry(r = BEVEL, segR = 4, segF = 2) {
   const n = segR * 2 + segF;
   const g = new THREE.BoxGeometry(1, 1, 1, n, n, n);
@@ -453,7 +463,7 @@ function makeFaceMaterial(skin, value) {
       m = new THREE.MeshPhysicalMaterial({ ...common, roughness: 0.32, metalness: 0, clearcoat: 1, clearcoatRoughness: 0.07, envMapIntensity: 1.1 });
       break;
     case 'metal':
-      m = new THREE.MeshStandardMaterial({ ...common, roughness: 0.3, metalness: 0.92, envMapIntensity: 1.35 });
+      m = new THREE.MeshStandardMaterial({ ...common, roughness: 0.26, metalness: 0.85, envMapIntensity: 2.4 });
       break;
     case 'glow':
       m = new THREE.MeshPhysicalMaterial({ ...common, roughness: 0.18, metalness: 0, clearcoat: 1, clearcoatRoughness: 0.05,
@@ -613,7 +623,7 @@ function emitTrail(fx, sys, pos, vel, amt, reduced) {
       break;
     }
     case 'flames': {
-      for (let i = count(2.4); i--;) sys.add.emit({ p: P(0.28), v: [rr(-0.5, 0.5) - vel[0] * 0.06, rr(1.5, 3.5), rr(-0.5, 0.5) - vel[2] * 0.06], life: rr(0.3, 0.55), s0: rr(0.55, 0.85), s1: 0.12, a: 0.85, c0: FXC.flames[1], c1: FXC.flames[3], g: -3, drag: 2 });
+      for (let i = count(2.4); i--;) sys.add.emit({ p: P(0.28), v: [rr(-0.5, 0.5) - vel[0] * 0.06, rr(1.5, 3.5), rr(-0.5, 0.5) - vel[2] * 0.06], life: rr(0.3, 0.55), s0: rr(0.6, 0.95), s1: 0.12, a: 1, c0: FXC.flames[0], c1: FXC.flames[2], g: -3, drag: 2 });
       if (Math.random() < 0.35 * amt) sys.add.emit({ p: P(0.2), v: [rr(-2, 2), rr(2, 5), rr(-2, 2)], life: 0.5, s0: 0.1, s1: 0.02, a: 1, c0: FXC.flames[0], c1: FXC.flames[2], g: 4, drag: 1 });
       break;
     }
@@ -748,6 +758,7 @@ export class DiceTray {
     this._pendingResolve = () => resolveFn(vals);
 
     this._show();
+    this.el.classList.toggle('human', human);
     this._layout(area, vals.length);
     this._setupDice(r);
     this._setTitle(label);
@@ -795,6 +806,17 @@ export class DiceTray {
     resolveFn(vals);
     this._fadeOut(token);
     return done;
+  }
+
+  /** Optional: build the WebGL context, environment and a skin's textures ahead of the first roll (~0.3–0.7s on phones). */
+  warmup(skin = 'bone') {
+    this._init();
+    const sk = typeof skin === 'object' ? skin : byId(DICE_SKINS, skin);
+    const mats = this._skinMats(sk);
+    this.dice[0].mesh.material = BASE_LAYOUT.map((v) => mats[v]);
+    this.dice[0].mesh.visible = true;
+    try { this.renderer.compile(this.scene, this.camera); } catch { /* ignore */ }
+    this.dice[0].mesh.visible = false;
   }
 
   hide() {
@@ -857,7 +879,7 @@ export class DiceTray {
     this.pool.rotation.x = -Math.PI / 2; this.pool.position.y = 0.004; this.pool.renderOrder = -2;
     this.root.add(this.pool);
     this.poolGlow = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), new THREE.MeshBasicMaterial({
-      map: radialTexture([[0, 'rgba(0,0,0,0)'], [0.62, 'rgba(0,0,0,0)'], [0.8, 'rgba(242,196,67,0.14)'], [0.9, 'rgba(160,110,255,0.08)'], [1, 'rgba(0,0,0,0)']]),
+      map: radialTexture([[0, 'rgba(0,0,0,0)'], [0.62, 'rgba(0,0,0,0)'], [0.8, 'rgba(242,196,67,0.09)'], [0.9, 'rgba(160,110,255,0.06)'], [1, 'rgba(0,0,0,0)']]),
       transparent: true, depthWrite: false, blending: THREE.AdditiveBlending }));
     this.poolGlow.rotation.x = -Math.PI / 2; this.poolGlow.position.y = 0.006; this.poolGlow.renderOrder = -1;
     this.root.add(this.poolGlow);
@@ -944,8 +966,8 @@ export class DiceTray {
     const toL = (sx, sy, h = 0) => this.root.worldToLocal(this._screenToPlane(sx, sy, h));
     const tl = toL(rect.x, rect.y); const tr = toL(rect.x + rect.w, rect.y);
     const bl = toL(rect.x, rect.y + rect.h); const br = toL(rect.x + rect.w, rect.y + rect.h);
-    let hx = Math.min(tr.x - tl.x, br.x - bl.x) / 2;
-    let zFar = Math.max(tl.z, tr.z); let zNear = Math.min(bl.z, br.z);
+    let hx = Math.min(tr.x - tl.x, br.x - bl.x) / 2 - 0.2;
+    let zFar = Math.max(tl.z, tr.z) + 0.7; let zNear = Math.min(bl.z, br.z) - 0.15;
     hx = Math.max(hx, need[0] / 2);
     const minD = need[1];
     if (zNear - zFar < minD) { const m = (zNear + zFar) / 2; zFar = m - minD / 2; zNear = m + minD / 2; }
@@ -959,18 +981,18 @@ export class DiceTray {
     this.key.position.set(-3.5, 13, zc + 5); this.key.target.position.set(0, 0, zc);
     sc.updateProjectionMatrix();
     // the "hand": where swipe-mode dice wait, near the bottom of the screen
-    const handY = Math.max(rect.y + rect.h + diePx * 0.6, vh - 150 - this.safeB);
-    this.handY = Math.min(handY, vh - 90 - this.safeB);
+    const handY = Math.max(rect.y + rect.h + diePx * 0.5, vh - 185 - this.safeB);
+    this.handY = Math.min(handY, vh - 120 - this.safeB);
     this.hand = toL(vw / 2, this.handY, 1.6 * s);
-    this.promptEl.style.top = `${this.handY + diePx * 0.8}px`;
-    this.promptEl.style.setProperty('--hand-dy', `${diePx * 0.8}px`);
+    this.promptEl.style.top = `${this.handY + diePx * 1.2}px`;
+    this.promptEl.style.setProperty('--hand-dy', `${diePx * 1.2}px`);
   }
 
   _setTitle(label) {
     this.titleEl.textContent = label || '';
     this.titleEl.style.display = label ? '' : 'none';
     if (label) {
-      const top = Math.max(8 + (this.opts.safeTop || 0), this.rect.y - 34);
+      const top = Math.max(8 + (this.opts.safeTop || 0), this.rect.y - this.diePx * 0.9 - 30);
       this.titleEl.style.top = `${top}px`;
       this.titleEl.style.left = `${this.rect.x + this.rect.w / 2}px`;
     }
@@ -990,9 +1012,9 @@ export class DiceTray {
       d.mats = BASE_LAYOUT.map((v) => mats[v].clone());
       d.mats.forEach((m, k) => { m.userData.value = BASE_LAYOUT[k]; m.userData.baseColor = m.color.clone(); });
       d.mesh.material = d.mats;
-      d.mesh.scale.setScalar(1);
+      d.mesh.scale.setScalar(HAND_SCALE);
       const col = i % cols; const row = Math.floor(i / cols); const rowCount = Math.min(cols, n - row * cols);
-      d.handOff = new THREE.Vector3((col - (rowCount - 1) / 2) * 1.3, row * 0.25, row * -1.15 + (Math.floor((n - 1) / cols)) * 0.5);
+      d.handOff = new THREE.Vector3((col - (rowCount - 1) / 2) * 1.12 + (row % 2) * 0.2, row * 0.3, row * -1.0 + (Math.floor((n - 1) / cols)) * 0.5);
       d.mesh.position.copy(this.hand).add(d.handOff);
       d.mesh.quaternion.setFromEuler(new THREE.Euler(Math.random() * 6.28, Math.random() * 6.28, Math.random() * 6.28));
       d.spinAxis.set(Math.random() - 0.5, Math.random() - 0.5, Math.random() - 0.5).normalize();
@@ -1131,13 +1153,14 @@ export class DiceTray {
 
   _fadeOut(token) {
     this.el.classList.add('out');
+    this.el.classList.remove('human', 'waiting');
     this._fadeTimer = setTimeout(() => { if (token === this._token) this._hideNow(); }, 260);
   }
 
   _hideNow() {
     clearTimeout(this._fadeTimer);
     this.el.style.display = 'none';
-    this.el.classList.remove('on', 'out', 'waiting');
+    this.el.classList.remove('on', 'out', 'waiting', 'human');
     this.promptEl.classList.remove('show');
     this.layer.innerHTML = '';
     this._visible = false;
@@ -1220,7 +1243,7 @@ export class DiceTray {
         const wl = Math.hypot(...s.w);
         Q.copy(rotQ(s.w, -wl * 0.1 * (1 - u))).multiply(q0);
         d.mesh.quaternion.copy(Q);
-        d.mesh.scale.setScalar(r.fromHand ? 1 : 0.35 + 0.65 * Math.min(1, u * 1.4));
+        d.mesh.scale.setScalar(r.fromHand ? HAND_SCALE + (1 - HAND_SCALE) * u : 0.35 + 0.65 * Math.min(1, u * 1.4));
         if (r.fx !== 'none') emitTrail(r.fx, this.fx, [P.x, P.y, P.z], [v0.x, v0.y, v0.z], 1, r.reduced);
       }
       return;
@@ -1266,7 +1289,7 @@ export class DiceTray {
   _highlight(r) {
     const n = r.values.length;
     r.results = r.values.map((v) => classify(r.kind, v, r.triggers));
-    const tags = [];
+    const tags = []; const tagPos = [];
     const vw = window.innerWidth;
     let minX = 1e9; let maxX = -1e9; let maxY = -1e9; let minY = 1e9;
     for (let i = 0; i < n; i++) {
@@ -1280,13 +1303,25 @@ export class DiceTray {
       minX = Math.min(minX, sx); maxX = Math.max(maxX, sx); minY = Math.min(minY, sy);
       const bot = d.mesh.position.clone().add(new THREE.Vector3(0, 0, 0.6)).applyMatrix4(this.root.matrixWorld).project(this.camera);
       maxY = Math.max(maxY, (1 - bot.y) / 2 * window.innerHeight);
-      if (R.label) tags.push(`<div class="dice-tag r-${res}" style="left:${sx.toFixed(1)}px;top:${(sy - this.diePx * 0.42).toFixed(1)}px;animation-delay:${i * 40}ms">${R.label}</div>`);
+      if (R.label) tagPos.push({ sx, sy: sy - this.diePx * 0.42, res, label: R.label, i, w: R.label.length * 9 + 18 });
       if (res === 'crit' || res === 'trigger') emitCritBurst(this.fx, d.mesh.position, R.color);
+    }
+    // per-die tags, unless they would overlap (many small dice): then one summary row instead
+    const overlap = tagPos.some((a, i) => tagPos.some((b, j) => j > i && Math.abs(a.sx - b.sx) < (a.w + b.w) / 2 + 2 && Math.abs(a.sy - b.sy) < 22));
+    if (!overlap) {
+      for (const t of tagPos) tags.push(`<div class="dice-tag r-${t.res}" style="left:${t.sx.toFixed(1)}px;top:${t.sy.toFixed(1)}px;animation-delay:${t.i * 40}ms">${t.label}</div>`);
+    } else {
+      const order = ['crit', 'trigger', 'hit', 'miss', 'cmiss'];
+      const counts = {}; tagPos.forEach((t) => { counts[t.res] = (counts[t.res] || 0) + 1; });
+      const parts = order.filter((k) => counts[k]).map((k) => `<span class="dice-tag r-${k}">${counts[k] > 1 ? `${counts[k]}× ` : ''}${RESULT[k].label}</span>`);
+      const y = Math.min(window.innerHeight - 60 - this.safeB, maxY + 10);
+      tags.push(`<div class="dice-summary" style="left:${clamp((minX + maxX) / 2, 120, vw - 120).toFixed(1)}px;top:${y.toFixed(1)}px">${parts.join('')}</div>`);
+      maxY = y + 30;
     }
     if (r.kind === 'move' || r.kind === 'pvp') {
       const sum = r.values.reduce((a, b) => a + b, 0);
       const y = Math.min(window.innerHeight - 70 - this.safeB, maxY + 14);
-      tags.push(`<div class="dice-sum" style="left:${((minX + maxX) / 2).toFixed(1)}px;top:${y.toFixed(1)}px"><small>${r.kind === 'move' ? 'MOVE' : 'TOTAL'}</small>${sum}</div>`);
+      tags.push(`<div class="dice-sum" style="left:${clamp((minX + maxX) / 2, 70, vw - 70).toFixed(1)}px;top:${y.toFixed(1)}px"><small>${r.kind === 'move' ? 'MOVE' : 'TOTAL'}</small>${sum}</div>`);
     }
     this.layer.innerHTML = tags.join('');
     this.el.classList.toggle('human', r.human);
@@ -1307,7 +1342,7 @@ export class DiceTray {
           m.color.copy(m.userData.baseColor).lerp(new THREE.Color('#5a5566'), 0.55 * e).multiplyScalar(1 - 0.35 * e);
         } else if (!m.emissiveMap && (res === 'crit' || res === 'trigger' || res === 'cmiss')) {
           m.emissive.set(RESULT[res].color);
-          m.emissiveIntensity = (res === 'cmiss' ? 0.25 : 0.32) * e * (0.7 + 0.3 * Math.sin(now * 7));
+          m.emissiveIntensity = (res === 'cmiss' ? 0.1 : 0.13) * e * (0.6 + 0.4 * Math.sin(now * 7));
         }
       }
       if (d.halo.visible) d.halo.material.opacity = res === 'dim' ? 0.1 : 0.55;
