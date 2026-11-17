@@ -1,0 +1,5 @@
+<!DOCTYPE html><html><head><meta charset="utf-8"><title>Relix: treasure and trap illustrations</title><link rel="icon" href="../assets/tiles/start.webp"><link rel="stylesheet" href="../css/cards.css">
+<style>body{margin:0;background:#2a1d3e;display:grid;grid-template-columns:repeat(8,1fr);gap:6px;padding:6px;font:900 11px sans-serif;color:#fff}
+div{background:linear-gradient(#fff3a0,#ffc23a 52%,#e8703a);border-radius:10px;text-align:center;padding:4px}div.t{background:linear-gradient(#a8ffd8,#2ac0a0 52%,#1a5a6a)}svg{width:100%;height:auto;aspect-ratio:1}</style></head><body>
+<script type="module">import {ART,treasureArt,trapArt} from '../js/card-art.js';
+document.body.innerHTML=Object.keys(ART.treasure).filter(k=>ART.treasure[k]).map(k=>`<div>${treasureArt(k)}${k}</div>`).join('')+Object.keys(ART.trap).map(k=>`<div class="t">${trapArt(k)}${k}</div>`).join('');</script></body></html>

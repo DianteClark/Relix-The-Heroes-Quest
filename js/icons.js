@@ -5,7 +5,7 @@ const ink = 'stroke="#140c1e" stroke-width="2.2" stroke-linejoin="round" stroke-
 export const ICON = {
   menu: S(`<path d="M4 6.5h16M4 12h16M4 17.5h16" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"/>`),
   close: S(`<path d="M6 6l12 12M18 6L6 18" fill="none" stroke="currentColor" stroke-width="2.8" stroke-linecap="round"/>`),
-  card: S(`<rect x="5" y="3" width="12" height="17" rx="2" fill="#a39b00" ${ink}/><rect x="8" y="6" width="6" height="5" rx="1" fill="#5c5046"/>`),
+  card: S(`<rect x="5" y="2.5" width="13.5" height="19" rx="2.4" fill="#ffd23f" ${ink}/><rect x="7.6" y="5.2" width="8.3" height="8" rx="3.6" fill="#6ad8b0" stroke="#140c1e" stroke-width="1.4"/><path d="M8.2 11.2c1.6-1.4 5.4-1.4 7.1 0" fill="none" stroke="#fff" stroke-width="1.2" opacity=".85"/><rect x="7.6" y="15.2" width="8.3" height="3.4" rx="1.2" fill="#8a7ac8" stroke="#140c1e" stroke-width="1.2"/>`),
   gem: S(`<path d="M12 2l7 9-7 11-7-11z" fill="#f2c443" ${ink}/><path d="M12 2v20M5 11h14" stroke="#fff3b0" stroke-width="1.2" opacity=".8"/>`),
   hourglass: S(`<path d="M7 3h10M7 21h10M8 3c0 5 8 6 8 9s-8 4-8 9M16 3c0 5-8 6-8 9s8 4 8 9" fill="#f4ecdf" ${ink}/>`),
   heartbreak: S(`<path d="M12 20s-8-5-8-11a4.5 4.5 0 018-2.8A4.5 4.5 0 0120 9c0 6-8 11-8 11z" fill="#e5484d" ${ink}/><path d="M12 6.5l-1.5 4 3 2-2 4" fill="none" stroke="#140c1e" stroke-width="2"/>`),
