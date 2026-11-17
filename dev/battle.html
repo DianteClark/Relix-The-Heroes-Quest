@@ -40,6 +40,23 @@
         <button class="gold" id="openPvp">PvP</button>
       </div>
       <div class="row" id="bossRow"></div>
+      <h4>Brawl (multi-player PvP)</h4>
+      <div class="row">
+        <button class="gold" data-brawl="3">Brawl 3 (FFA)</button>
+        <button class="gold" data-brawl="4">Brawl 4 (2v2 guilds)</button>
+        <button class="gold" data-brawl="5">Brawl 5 (guild+solos)</button>
+        <button class="gold" data-brawl="6">Brawl 6 (3 guilds)</button>
+        <button id="brawlDemo">Brawl demo</button>
+        <button id="brawlHit">Random hit</button>
+        <button id="brawlCrit">Random crit</button>
+        <button id="brawlKO">KO random</button>
+        <button id="brawlFocus">Focus toggle</button>
+      </div>
+      <h4>Art check</h4>
+      <div class="row">
+        <button id="pedestals">Check pedestals (cycle all art)</button>
+        <button id="pedStop">Stop</button>
+      </div>
       <h4>Strike</h4>
       <div class="row">
         <button data-strike="left">L hits</button>
@@ -104,6 +121,85 @@
       const b = BOSSES[i];
       return scene.open({ left: heroData(heroId), right: { id: b.id, name: b.name, art: b.art, hp: b.hp, maxHp: b.hp, atk: b.atk, side: 'enemy' }, kind: 'boss', theme: b.theme });
     };
+    // ---- brawl
+    const GUILDS = [
+      { id: 'g1', name: 'Iron Wolves', banner: SEAT_BANNERS[1] },
+      { id: 'g2', name: 'Red Fangs', banner: SEAT_BANNERS[0] },
+      { id: 'g3', name: 'Green Hood', banner: SEAT_BANNERS[2] },
+    ];
+    // team layouts per fighter count: guild index or null (solo)
+    const BRAWL_TEAMS = {
+      3: [null, null, null],
+      4: [0, 0, 1, 1],
+      5: [0, 0, null, null, null],
+      6: [0, 0, 1, 1, 2, 2],
+    };
+    const NAMES = ['Ana', 'Bram', 'Cyrus', 'Dalia', 'Ezra the Bold', 'Faye'];
+    window.brawlFighters = (n, teams = BRAWL_TEAMS[n] || Array(n).fill(null)) => {
+      const ids = ['chan_kong', 'josue', 'luke', 'nowtna', 'shi', 'yessi'];
+      return teams.map((g, i) => {
+        const h = HEROES.find((x) => x.id === ids[i % ids.length]);
+        const guild = g == null ? null : GUILDS[g];
+        const maxHp = 80, hp = 30 + ((i * 17) % 50);
+        return { id: 'p' + i, name: NAMES[i], art: h.art, hp, maxHp, atk: h.atk, side: 'hero',
+          banner: guild ? guild.banner : SEAT_BANNERS[(i + 3) % SEAT_BANNERS.length],
+          team: guild ? guild.id : 'p' + i, guild: guild ? guild.name : undefined };
+      });
+    };
+    window.openBrawl = (n, themeIdx = 4, teams) => scene.open({ kind: 'brawl', fighters: brawlFighters(n, teams), theme: BOSSES[themeIdx % BOSSES.length].theme });
+    document.querySelectorAll('[data-brawl]').forEach((b) => b.onclick = () => openBrawl(+b.dataset.brawl, +b.dataset.brawl));
+    const alive = () => scene.fighters.filter((f) => !f.dead);
+    const randomPair = () => {
+      const a = alive(); if (a.length < 2) return null;
+      const from = a[Math.floor(Math.random() * a.length)];
+      const foes = a.filter((f) => f.team !== from.team); if (!foes.length) return null;
+      return [from, foes[Math.floor(Math.random() * foes.length)]];
+    };
+    $('#brawlHit').onclick = () => { const p = randomPair(); if (p) scene.strikeAt(p[0].id, p[1].id, { dmg: 5 }); };
+    $('#brawlCrit').onclick = () => { const p = randomPair(); if (p) scene.strikeAt(p[0].id, p[1].id, { dmg: 10, crit: true }); };
+    $('#brawlKO').onclick = () => { const a = alive(); if (a.length) scene.defeatOf(a[Math.floor(Math.random() * a.length)].id, KILL_FX[Math.floor(Math.random() * KILL_FX.length)].id); };
+    let focused = false;
+    $('#brawlFocus').onclick = () => { focused = !focused; const a = alive(); scene.focus(focused && a.length ? [a[0].id] : null); };
+    // PvP as the game plays it: everyone rolls, highest side hits everyone else.
+    window.brawlDemo = async (n = 6) => {
+      await openBrawl(n, 2);
+      const fs = scene.fighters;
+      const winTeam = fs[0].team;
+      scene.focus(fs.filter((f) => f.team === winTeam).map((f) => f.id));
+      await scene.skillOf(fs[0].id, 'RAGE +5');
+      scene.focus(null);
+      for (const f of fs.filter((x) => x.team !== winTeam)) {
+        const crit = f === fs[fs.length - 1];
+        const dmg = crit ? 15 : 5;
+        await scene.strikeAt(fs[0].id, f.id, { dmg, crit, hp: Math.max(0, f.hp - dmg) });
+        if (f.hp - dmg <= 0) await scene.defeatOf(f.id, 'soulburst');
+      }
+      await scene.strikeAt(fs[fs.length - 1].id, fs[1].id, { miss: true });
+      await new Promise((r) => setTimeout(r, 400));
+      await scene.close();
+    };
+    $('#brawlDemo').onclick = () => brawlDemo(6);
+
+    // ---- pedestal check: every hero, monster and boss stands on a platform.
+    const ALL_ART = [...HEROES.map((h) => ({ art: h.art, name: h.short || h.name, kind: 'hero' })), ...MONSTERS.map((m) => ({ art: m.art, name: m.name, kind: 'monster' })), ...BOSSES.map((b) => ({ art: b.art, name: b.name, kind: 'boss' }))];
+    window.ALL_ART = ALL_ART;
+    let pedTimer = 0;
+    // Show art i on both sides (as the enemy on the right, and as the left fighter).
+    window.showPedestal = (i) => {
+      const a = ALL_ART[i % ALL_ART.length];
+      const right = { id: a.art, name: a.name, art: a.art, hp: 5, maxHp: 5, atk: 1, side: a.kind === 'hero' ? 'hero' : 'enemy' };
+      const left = a.kind === 'hero' ? heroData(HEROES.find((h) => h.art === a.art).id) : { ...right, side: 'hero' };
+      scene.speed = 0;
+      return scene.open({ left, right, kind: a.kind === 'boss' ? 'boss' : 'monster', theme: BOSSES[i % BOSSES.length].theme }).then(() => { scene.speed = +$('#speed').value; });
+    };
+    $('#pedestals').onclick = () => {
+      clearInterval(pedTimer);
+      let i = 0;
+      showPedestal(i++);
+      pedTimer = setInterval(() => { if (i >= ALL_ART.length) { clearInterval(pedTimer); return; } showPedestal(i++); }, 1400);
+    };
+    $('#pedStop').onclick = () => clearInterval(pedTimer);
+
     window.openPvp = (a = 'chan_kong', b = 'yessi') => {
       const h2 = HEROES.find((x) => x.id === b);
       return scene.open({ left: heroData(a), right: { id: h2.id, name: h2.short || h2.name, art: h2.art, hp: 47, maxHp: 80, atk: 1, side: 'hero', banner: SEAT_BANNERS[0] }, kind: 'pvp', theme: BOSSES[4].theme });

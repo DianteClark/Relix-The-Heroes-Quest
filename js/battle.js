@@ -1,16 +1,26 @@
-// Relix v0.2: BattleScene, a Fire Emblem-style battle cut-in.
+// Relix v0.3: BattleScene, a Fire Emblem-style battle cut-in.
 //
-// The board dims and both fighters' full art (no card frame) faces off on a themed
+// The board dims and the fighters' full art (no card frame) faces off on a themed
 // stage. Under each fighter's feet sit a name plate and a chunky HP bar. Everything
 // is DOM + WAAPI transforms/opacity plus one 2D canvas for particles, so it stays
 // cheap on phones (no extra WebGL context).
 //
+// Duel (2 fighters, the v0.2 API):
 //   const scene = new BattleScene();
-//   await scene.open({ left, right, kind, theme });
+//   await scene.open({ left, right, kind, theme });   // kind 'monster' | 'boss' | 'pvp'
 //   const rect = scene.diceArea();             // hand to DiceTray.roll({ area: rect })
 //   await scene.strike('left', { dmg: 3, crit: true });
 //   await scene.defeat('right', 'shatter');
 //   await scene.close();
+//
+// Brawl (3-6 fighters, multi-player PvP; guild members share a team):
+//   await scene.open({ kind: 'brawl', fighters: [{ id, name, art, hp, maxHp, team, guild, banner }, ...], theme });
+//   await scene.strikeAt('p0', 'p2', { dmg: 5, crit: false, hp: 35 });
+//   scene.setHpOf('p2', 35);  await scene.skillOf('p1', 'RAGE +5');  await scene.defeatOf('p2', 'soulburst');
+//   scene.diceAreaFor('p1');  scene.focus(['p0', 'p1']);
+//
+// Every method that takes a side ('left' / 'right') also accepts a fighter id, and
+// the id methods also work in a duel, so callers can use ids everywhere.
 //
 // Sound: fires window `relix:sfx` CustomEvents ({ name, intensity }) for
 // hit, crit, miss, whoosh, ko and vs.
@@ -87,6 +97,51 @@ function glowSprite(color, soft = 0.5) {
   return c;
 }
 
+// Opaque bounds of an art file, measured once per URL from its alpha channel.
+// u0/u1: left/right edge, v0: top edge, vf: the "foot line" (lowest row with a
+// solid run of pixels, so a stray tail tip or spear point doesn't lift the feet off
+// the platform). All in 0..1 of the natural image.
+const artBoxCache = new Map();
+function measureArt(img, url) {
+  if (artBoxCache.has(url)) return artBoxCache.get(url);
+  const full = { u0: 0, v0: 0, u1: 1, vf: 1, ok: false };
+  const nw = img.naturalWidth, nh = img.naturalHeight;
+  if (!nw || !nh) return full;
+  const k = Math.min(1, 200 / Math.max(nw, nh));
+  const w = Math.max(1, Math.round(nw * k)), h = Math.max(1, Math.round(nh * k));
+  let data;
+  try {
+    const c = document.createElement('canvas');
+    c.width = w; c.height = h;
+    const g = c.getContext('2d', { willReadFrequently: true });
+    g.drawImage(img, 0, 0, w, h);
+    data = g.getImageData(0, 0, w, h).data;
+  } catch { artBoxCache.set(url, full); return full; }
+  const A = 40;
+  let x0 = w, x1 = -1, y0 = h, y1 = -1;
+  const rowCount = new Uint16Array(h);
+  for (let y = 0; y < h; y++) {
+    let n = 0;
+    for (let x = 0; x < w; x++) {
+      if (data[(y * w + x) * 4 + 3] > A) { n++; if (x < x0) x0 = x; if (x > x1) x1 = x; }
+    }
+    rowCount[y] = n;
+    if (n) { if (y < y0) y0 = y; y1 = y; }
+  }
+  if (x1 < 0) { artBoxCache.set(url, full); return full; }
+  const bw = x1 - x0 + 1, need = Math.max(2, bw * 0.06);
+  let yf = y1;
+  while (yf > y0 && rowCount[yf] < need) yf--;
+  // Never trim more than 6% for the foot line: anything below that is real body.
+  yf = Math.max(yf, y1 - Math.round(h * 0.06));
+  const box = { u0: x0 / w, u1: (x1 + 1) / w, v0: y0 / h, vf: (yf + 1) / h, ok: true };
+  artBoxCache.set(url, box);
+  return box;
+}
+
+// Team colors for brawls when a fighter has no banner / team color of its own.
+const TEAM_COLORS = ['#3d6fd6', '#d23c38', '#3fa34d', '#7b4fd6', '#e0802a', '#1f9a9a'];
+
 // =====================================================================
 export class BattleScene {
   constructor(opts = {}) {
@@ -101,6 +156,9 @@ export class BattleScene {
     this._raf = 0;
     this._last = 0;
     this._bgKey = '';
+    this.pool = [];                         // fighter DOM rigs, reused between scenes
+    this.list = [];                         // fighters in the current scene
+    this.byId = new Map();
     this._build(opts.parent || document.body);
     this._onResize = () => { if (this._open) this._layout(); };
     window.addEventListener('resize', this._onResize);
@@ -141,6 +199,7 @@ export class BattleScene {
         <div class="bt-vs"><span>V</span><span>S</span></div>
         <div class="bt-pops"></div>
       </div>
+      <div class="bt-impact"></div>
       <div class="bt-flash"></div>
       <div class="bt-safe"></div>`;
     parent.appendChild(R);
@@ -150,14 +209,30 @@ export class BattleScene {
       arena: q('.bt-arena'), darken: q('.bt-darken'), fighters: q('.bt-fighters'), fx: q('.bt-fx'),
       plates: q('.bt-plates'), head: q('.bt-head'), kind: q('.bt-kind'), theme: q('.bt-theme'),
       vs: q('.bt-vs'), pops: q('.bt-pops'), flash: q('.bt-flash'), safe: q('.bt-safe'),
-      edgeT: q('.bt-edge.top'), edgeB: q('.bt-edge.bot'),
+      edgeT: q('.bt-edge.top'), edgeB: q('.bt-edge.bot'), impact: q('.bt-impact'),
     };
     this.ctx = this.$.fx.getContext('2d');
     this.F = { left: this._buildFighter('left'), right: this._buildFighter('right') };
   }
 
+  // Resolve 'left' / 'right' / a fighter id / a fighter object to a fighter.
+  _get(k) {
+    if (k && typeof k === 'object' && k.root) return k;
+    if (k == null) return null;
+    return (this.kind !== 'brawl' && (k === 'left' || k === 'right') ? this.F[k] : null) || this.byId.get(String(k)) || null;
+  }
+  // Key for a fighter / player: 'left' | 'right' in a duel, its id in a brawl.
+  // Accepts an id, or a game player object ({ id } -> fighter id 'p' + id).
+  sideOf(x) {
+    const f = this._get(x) || (x && typeof x === 'object' ? this._get('p' + x.id) || this._get(x.id) : this._get('p' + x));
+    if (!f) return null;
+    return this.kind === 'brawl' ? f.id : f.side;
+  }
+  get fighters() { return this.list.map((f) => ({ id: f.id, side: f.side, team: f.team, hp: f.hp, maxHp: f.maxHp, dead: f.dead })); }
+
   _buildFighter(side) {
     const f = { side };
+    this.pool.push(f);
     f.root = el('div', `bt-f ${side}`);
     // Platform + shadow live in their own layer so a lunging fighter (raised z-index)
     // never lifts its platform over the name plates.
@@ -184,7 +259,9 @@ export class BattleScene {
         <span class="bt-num"><b>0</b><small>/0</small></span>
       </div>
       <div class="bt-atk"><img src="${UI_BASE}sword.webp" alt=""><b></b></div>
+      <div class="bt-teamtab"></div>
       <div class="bt-ko">K.O.</div>`;
+    f.teamtab = f.plate.querySelector('.bt-teamtab');
     f.fill = f.plate.querySelector('.bt-fill');
     f.ghost = f.plate.querySelector('.bt-ghost');
     f.ticks = f.plate.querySelector('.bt-ticks');
@@ -200,10 +277,17 @@ export class BattleScene {
   }
 
   // ------------------------------------------------------------- open
-  async open({ left, right, kind = 'monster', theme } = {}) {
+  // Duel: open({ left, right, kind: 'monster'|'boss'|'pvp', theme })
+  // Brawl: open({ kind: 'brawl', fighters: [...2-6 fighters], theme }). A fighter is
+  //   { id, name, art, hp, maxHp, atk?, banner?, team?, guild?, teamColor?, title? }.
+  //   `team` groups guild members on one side (default: each fighter alone);
+  //   `guild` is the guild's display name (shown as a tab on the plate);
+  //   `teamColor` overrides the color (default: the first member's banner field).
+  async open({ left, right, kind = 'monster', theme, fighters } = {}) {
     this._gen++;
     this._cancelAll();
     this._parts.length = 0;
+    const brawl = kind === 'brawl';
     this.kind = kind;
     this.theme = { ...DEFAULT_THEME, ...(theme || {}) };
     this.motif = motifOf(this.theme);
@@ -217,10 +301,63 @@ export class BattleScene {
     this.root.dataset.kind = kind;
     this.root.dataset.motif = this.motif;
     this.root.classList.toggle('bt-rm', this.reducedMotion);
-    this.$.kind.textContent = kind === 'boss' ? 'Boss Battle' : kind === 'pvp' ? 'Duel' : 'Battle';
+    this.root.classList.toggle('bt-brawl', brawl);
+    this.$.kind.textContent = kind === 'boss' ? 'Boss Battle' : kind === 'pvp' ? 'Duel' : brawl ? 'Brawl' : 'Battle';
     this.$.theme.textContent = th.name || '';
+    this.$.vs.classList.toggle('brawl', brawl);
+    this.$.vs.innerHTML = (brawl ? 'BRAWL!' : 'VS').split('').map((c) => `<span>${c}</span>`).join('');
+    this._focus = null;
 
-    const loads = [this._setFighter(this.F.left, left || {}), this._setFighter(this.F.right, right || {})];
+    let entries;
+    this.byId.clear();
+    if (brawl) {
+      const raw = (fighters || []).filter(Boolean).slice(0, 6);
+      // Keep guild-mates next to each other (first-appearance order of teams).
+      const teams = [];
+      raw.forEach((d, i) => {
+        const key = String(d.team ?? d.id ?? `f${i}`);
+        let t = teams.find((x) => x.key === key);
+        if (!t) teams.push((t = { key, members: [] }));
+        t.members.push(d);
+      });
+      const used = new Set();
+      teams.forEach((t, i) => {
+        const lead = t.members.find((d) => d.teamColor || d.banner?.field) || t.members[0];
+        let c = (lead.teamColor || lead.banner?.field || TEAM_COLORS[i % TEAM_COLORS.length]).toLowerCase();
+        if (used.has(c)) c = TEAM_COLORS.find((x) => !used.has(x)) || c;
+        used.add(c);
+        t.color = c;
+      });
+      const list = teams.flatMap((t) => t.members.map((d) => ({ d, team: t })));
+      while (this.pool.length < list.length) this._buildFighter('left');
+      const portrait = (innerHeight / innerWidth) > 1.15;
+      const slots = this._slots(list.length, portrait);
+      entries = list.map(({ d, team }, i) => {
+        const f = this.pool[i];
+        f.slot = slots[i];
+        f.side = slots[i].x <= 0.5 ? 'left' : 'right';
+        f.team = team.key; f.teamColor = team.color; f.teamSize = team.members.length;
+        f.id = String(d.id ?? `f${i}`);
+        return [f, d];
+      });
+    } else {
+      const [A, B] = this.pool;
+      A.side = 'left'; B.side = 'right';
+      this.F = { left: A, right: B };
+      entries = [[A, left || {}], [B, right || {}]];
+      for (const [f, d] of entries) {
+        f.slot = null; f.teamColor = null; f.teamSize = 1;
+        f.id = String(d.id ?? f.side);
+        f.team = d.team != null ? String(d.team) : f.side;
+      }
+    }
+    this.list = entries.map(([f]) => f);
+    for (const f of this.pool) {
+      const on = this.list.includes(f);
+      for (const n of [f.root, f.base, f.plate]) n.style.display = on ? '' : 'none';
+    }
+    for (const f of this.list) { if (!this.byId.has(f.id)) this.byId.set(f.id, f); }
+    const loads = entries.map(([f, d]) => this._setFighter(f, d));
     this.root.style.display = 'block';
     this.root.setAttribute('aria-hidden', 'false');
     this._open = true;
@@ -231,40 +368,45 @@ export class BattleScene {
     this._seedAmbient();
     this._startLoop();
     const gen = this._gen;
-    const p = this._intro().catch((e) => console.error(e)).finally(() => { if (gen === this._gen) this.root.classList.remove('bt-intro'); });
+    const p = (brawl ? this._introBrawl() : this._intro()).catch((e) => console.error(e)).finally(() => { if (gen === this._gen) this.root.classList.remove('bt-intro'); });
     this._q = p;
     return p;
   }
 
   async _setFighter(f, d) {
+    const brawl = this.kind === 'brawl';
     f.data = d;
     f.dead = false;
     f.hp = d.hp ?? d.maxHp ?? 1;
     f.maxHp = Math.max(1, d.maxHp ?? d.hp ?? 1);
     f.boss = this.kind === 'boss' && d.side !== 'hero';
-    f.root.className = `bt-f ${f.side}${f.boss ? ' boss' : ''} ${d.side === 'hero' ? 'hero' : 'enemy'}`;
-    f.base.className = `bt-fbase ${f.side}${f.boss ? ' boss' : ''}`;
-    f.plate.className = `bt-plate ${f.side}${f.boss ? ' boss' : ''} ${d.side === 'hero' ? 'hero' : 'enemy'}`;
+    f.hero = brawl || d.side === 'hero';
     f.root.style.opacity = '';
+    f.root.style.zIndex = '';
+    f.z = '';
     f.act.style.opacity = '';
     f.img.style.filter = '';
     f.tint.style.opacity = '';
-    this._stop(f.act); this._stop(f.tint);
+    f.turn.style.transform = '';
+    f.root.classList.remove('frozen', 'dimmed', 'focused');
+    f.plate.classList.remove('dimmed', 'focused');
+    this._stop(f.act); this._stop(f.tint); this._stop(f.plate);
     f.root.querySelectorAll('.bt-ghostimg').forEach((g) => g.remove());
     const art = d.art || d.id || 'skeleton_warrior';
     const url = /[/.]/.test(art) ? art : `${ART_BASE}${art}.webp`;
     f.url = url;
-    // Fighters face each other: left looks right, right looks left.
-    const facing = d.facing || ART_FACING[art] || 'front';
-    f.mirror = (f.side === 'left' && facing === 'left') || (f.side === 'right' && facing === 'right');
-    f.turn.classList.toggle('mirror', f.mirror);
-    f.turn.classList.toggle('front', facing === 'front');
+    f.facing = d.facing || ART_FACING[art] || 'front';
+    this._applySide(f);
     f.tint.style.webkitMaskImage = f.tint.style.maskImage = `url("${url}")`;
     f.plate.querySelector('.bt-nm').textContent = d.name || '';
-    f.plate.classList.toggle('long', (d.name || '').length > 12);
-    f.plate.querySelector('.bt-tag').textContent = f.boss ? 'BOSS' : d.side === 'hero' ? (d.title || '') : '';
+    f.plate.classList.toggle('long', (d.name || '').length > (brawl ? 9 : 12));
+    f.plate.querySelector('.bt-tag').textContent = f.boss ? 'BOSS' : d.side === 'hero' && !brawl ? (d.title || '') : '';
     f.plate.querySelector('.bt-atk b').textContent = d.atk != null ? d.atk : '';
-    f.plate.querySelector('.bt-atk').style.display = d.atk != null ? '' : 'none';
+    f.plate.querySelector('.bt-atk').style.display = d.atk != null && !brawl ? '' : 'none';
+    // Guild tab over the plate: only for teams with 2+ fighters in this brawl.
+    const tab = brawl && f.teamSize > 1 ? (d.guild || '') : '';
+    f.teamtab.textContent = tab;
+    f.teamtab.style.display = tab ? '' : 'none';
     // Pennant in the fighter's banner colors.
     if (d.banner) {
       f.pennant.style.display = '';
@@ -272,11 +414,14 @@ export class BattleScene {
       f.pennant.style.setProperty('--pa', d.banner.accent || '#f2c443');
       f.pennant.style.setProperty('--pe', d.banner.emblemColor || d.banner.accent || '#f4ecdf');
     } else f.pennant.style.display = 'none';
-    const glow = d.banner?.field || (d.side === 'hero' ? '#f2c443' : hex(this.theme.accent));
-    f.root.style.setProperty('--bt-glow', d.side === 'hero' ? (d.banner?.field || '#f2c443') : (f.boss ? hex(this.theme.accent) : '#e5484d'));
-    f.base.style.setProperty('--bt-glow', d.side === 'hero' ? (d.banner?.field || '#f2c443') : (f.boss ? hex(this.theme.accent) : '#e5484d'));
-    f.plate.style.setProperty('--bt-side', d.side === 'hero' ? (d.banner?.field || '#3d6fd6') : (f.boss ? mix(hex(this.theme.accent), '#7a1020', 0.35) : '#b8322e'));
+    const glow = brawl ? f.teamColor : d.side === 'hero' ? (d.banner?.field || '#f2c443') : (f.boss ? hex(this.theme.accent) : '#e5484d');
+    f.root.style.setProperty('--bt-glow', glow);
+    f.base.style.setProperty('--bt-glow', glow);
+    f.plate.style.setProperty('--bt-side', brawl ? f.teamColor : d.side === 'hero' ? (d.banner?.field || '#3d6fd6') : (f.boss ? mix(hex(this.theme.accent), '#7a1020', 0.35) : '#b8322e'));
     f.glow = glow;
+    // Everyone bobs, a little out of step.
+    f.idle.style.animationDelay = brawl ? `${-rand(0, 2.6).toFixed(2)}s` : '';
+    f.idle.style.animationDuration = brawl ? `${rand(2.3, 3.1).toFixed(2)}s` : '';
     f.ko.style.opacity = '0';
     f.plate.classList.remove('dead');
     // Ticks: one per HP for small pools, one per 10 for big ones.
@@ -287,8 +432,35 @@ export class BattleScene {
     f.img.src = url;
     f.imgObj = f.img;
     try { await f.img.decode(); } catch { /* broken art still lays out */ }
-    f.aspect = f.img.naturalWidth && f.img.naturalHeight ? f.img.naturalWidth / f.img.naturalHeight : 0.9;
+    const nw = f.img.naturalWidth, nh = f.img.naturalHeight;
+    f.natAspect = nw && nh ? nw / nh : 0.9;
+    // Crop the fighter box to the art's opaque pixels so the feet (foot line) sit
+    // exactly on the platform, whatever transparent padding the file has.
+    const bx = nw && nh ? measureArt(f.img, url) : { u0: 0, v0: 0, u1: 1, vf: 1 };
+    const cw = Math.max(0.05, bx.u1 - bx.u0), ch = Math.max(0.05, bx.vf - bx.v0);
+    f.crop = bx;
+    f.aspect = (f.natAspect * cw) / ch;
+    const R = f.root.style;
+    R.setProperty('--ax', `${(-bx.u0 / cw) * 100}%`);
+    R.setProperty('--ay', `${(-bx.v0 / ch) * 100}%`);
+    R.setProperty('--aw', `${100 / cw}%`);
+    R.setProperty('--ah', `${100 / ch}%`);
     f.alphaMap = null;
+  }
+
+  // Facing + side classes. Fighters look toward the middle of the arena.
+  _applySide(f) {
+    const brawl = this.kind === 'brawl';
+    const facing = f.facing || 'front';
+    f.root.className = `bt-f ${f.side}${f.boss ? ' boss' : ''} ${f.hero ? 'hero' : 'enemy'}${brawl ? ' brawl' : ''}`;
+    f.base.className = `bt-fbase ${f.side}${f.boss ? ' boss' : ''}${brawl ? ' brawl' : ''}`;
+    f.plate.className = brawl ? `bt-plate mini${f.dead ? ' dead' : ''}` : `bt-plate ${f.side}${f.boss ? ' boss' : ''} ${f.hero ? 'hero' : 'enemy'}${f.dead ? ' dead' : ''}`;
+    if (f.data) f.plate.classList.toggle('long', (f.data.name || '').length > (brawl ? 9 : 12));
+    f.mirror = (f.side === 'left' && facing === 'left') || (f.side === 'right' && facing === 'right');
+    f.turn.classList.toggle('mirror', f.mirror);
+    f.turn.classList.toggle('front', facing === 'front');
+    // +1 = looks right, -1 = looks left, 0 = looks at the camera.
+    f.faceDir = facing === 'front' ? 0 : (facing === 'right' ? 1 : -1) * (f.mirror ? -1 : 1);
   }
 
   // ------------------------------------------------------------- layout
@@ -304,50 +476,56 @@ export class BattleScene {
     this.root.classList.toggle('portrait', portrait);
     this.root.classList.toggle('landscape', !portrait);
     const L = { W, H, portrait, sa };
-    const { left: A, right: B } = this.F;
-    const box = (f, S) => {
-      const a = f.aspect || 0.9;
-      return a >= 1 ? { w: S, h: S / a } : { w: S * a, h: S };
-    };
-    if (portrait) {
-      L.bTop = Math.max(sa.t - 14, 10);
-      L.bBot = H - Math.max(sa.b * 0.5, 10);
-      const bh = L.bBot - L.bTop;
-      L.horizon = L.bTop + bh * 0.3;
-      const sB = B.boss ? Math.min(W * 0.76, bh * 0.37) : Math.min(W * 0.58, bh * 0.29);
-      const sA = A.boss ? Math.min(W * 0.66, bh * 0.33) : Math.min(W * 0.56, bh * 0.28);
-      L.right = { x: W * (B.boss ? 0.62 : 0.67), y: L.bTop + bh * (B.boss ? 0.445 : 0.41), ...box(B, sB) };
-      L.left = { x: W * 0.3, y: L.bBot - Math.max(96, sa.b + 70), ...box(A, sA) };
-      const pw = Math.min(W * 0.62, 260);
-      L.pw = pw; L.pwR = B.boss ? Math.min(W * 0.72, 290) : pw;
-      L.plateL = { x: clamp(L.left.x - pw * 0.42, 10 + sa.l, W - pw - 10), y: L.left.y + 6 };
-      L.plateR = { x: clamp(L.right.x - L.pwR * 0.58, 10, W - L.pwR - 10 - sa.r), y: L.right.y + 6 };
-      const top = L.plateR.y + 74, bot = Math.max(top + 118, L.left.y - L.left.h * 0.86);
-      L.dice = { x: W * 0.06, y: top, w: W * 0.88, h: bot - top };
-      L.arena = { x: W * 0.5, y: L.dice.y + L.dice.h * 0.62, r: Math.min(W * 0.46, 200) };
-    } else {
-      const bh0 = Math.min(H - 16, Math.max(H * 0.86, 360));
-      L.bTop = Math.max((H - bh0) / 2, sa.t);
-      L.bBot = Math.min(L.bTop + bh0, H - sa.b);
-      const bh = L.bBot - L.bTop;
-      L.horizon = L.bTop + bh * 0.48;
-      const ground = L.bTop + bh * 0.72;
-      const base = Math.min(bh * 0.5, W * 0.26);
-      const sA = A.boss ? Math.min(bh * 0.6, W * 0.32) : base;
-      const sB = B.boss ? Math.min(bh * 0.62, W * 0.33) : base;
-      L.left = { x: W * 0.24, y: ground, ...box(A, sA) };
-      L.right = { x: W * 0.76, y: ground, ...box(B, sB) };
-      const pw = Math.min(W * 0.3, 300);
-      L.pw = pw; L.pwR = B.boss ? Math.min(W * 0.34, 330) : pw;
-      L.plateL = { x: clamp(L.left.x - pw / 2, 10 + sa.l, W - pw - 10), y: ground + 10 };
-      L.plateR = { x: clamp(L.right.x - L.pwR / 2, 10, W - L.pwR - 10 - sa.r), y: ground + 10 };
-      const x0 = L.left.x + L.left.w * 0.42, x1 = L.right.x - L.right.w * 0.42;
-      const dw = Math.max(x1 - x0, W * 0.24);
-      const dh = Math.min(bh * 0.46, 280);
-      L.dice = { x: W / 2 - dw / 2, y: ground - dh + 12, w: dw, h: dh };
-      L.arena = { x: W / 2, y: ground - 6, r: Math.min(dw * 0.55, 210) };
+    if (this.kind === 'brawl') this._layoutBrawl(L);
+    else {
+      const { left: A, right: B } = this.F;
+      const box = (f, S) => {
+        const a = f.aspect || 0.9;
+        return a >= 1 ? { w: S, h: S / a } : { w: S * a, h: S };
+      };
+      if (portrait) {
+        L.bTop = Math.max(sa.t - 14, 10);
+        L.bBot = H - Math.max(sa.b * 0.5, 10);
+        const bh = L.bBot - L.bTop;
+        L.horizon = L.bTop + bh * 0.3;
+        const sB = B.boss ? Math.min(W * 0.76, bh * 0.37) : Math.min(W * 0.58, bh * 0.29);
+        const sA = A.boss ? Math.min(W * 0.66, bh * 0.33) : Math.min(W * 0.56, bh * 0.28);
+        L.right = { x: W * (B.boss ? 0.62 : 0.67), y: L.bTop + bh * (B.boss ? 0.445 : 0.41), ...box(B, sB) };
+        L.left = { x: W * 0.3, y: L.bBot - Math.max(96, sa.b + 70), ...box(A, sA) };
+        const pw = Math.min(W * 0.62, 260);
+        L.pw = pw; L.pwR = B.boss ? Math.min(W * 0.72, 290) : pw;
+        L.plateL = { x: clamp(L.left.x - pw * 0.42, 10 + sa.l, W - pw - 10), y: L.left.y + 6 };
+        L.plateR = { x: clamp(L.right.x - L.pwR * 0.58, 10, W - L.pwR - 10 - sa.r), y: L.right.y + 6 };
+        const top = L.plateR.y + 74, bot = Math.max(top + 118, L.left.y - L.left.h * 0.86);
+        L.dice = { x: W * 0.06, y: top, w: W * 0.88, h: bot - top };
+        L.arena = { x: W * 0.5, y: L.dice.y + L.dice.h * 0.62, r: Math.min(W * 0.46, 200) };
+      } else {
+        const bh0 = Math.min(H - 16, Math.max(H * 0.86, 360));
+        L.bTop = Math.max((H - bh0) / 2, sa.t);
+        L.bBot = Math.min(L.bTop + bh0, H - sa.b);
+        const bh = L.bBot - L.bTop;
+        L.horizon = L.bTop + bh * 0.48;
+        const ground = L.bTop + bh * 0.72;
+        const base = Math.min(bh * 0.5, W * 0.26);
+        const sA = A.boss ? Math.min(bh * 0.6, W * 0.32) : base;
+        const sB = B.boss ? Math.min(bh * 0.62, W * 0.33) : base;
+        L.left = { x: W * 0.24, y: ground, ...box(A, sA) };
+        L.right = { x: W * 0.76, y: ground, ...box(B, sB) };
+        const pw = Math.min(W * 0.3, 300);
+        L.pw = pw; L.pwR = B.boss ? Math.min(W * 0.34, 330) : pw;
+        L.plateL = { x: clamp(L.left.x - pw / 2, 10 + sa.l, W - pw - 10), y: ground + 10 };
+        L.plateR = { x: clamp(L.right.x - L.pwR / 2, 10, W - L.pwR - 10 - sa.r), y: ground + 10 };
+        const x0 = L.left.x + L.left.w * 0.42, x1 = L.right.x - L.right.w * 0.42;
+        const dw = Math.max(x1 - x0, W * 0.24);
+        const dh = Math.min(bh * 0.46, 280);
+        L.dice = { x: W / 2 - dw / 2, y: ground - dh + 12, w: dw, h: dh };
+        L.arena = { x: W / 2, y: ground - 6, r: Math.min(dw * 0.55, 210) };
+      }
+      for (const k of ['left', 'right']) { const q = L[k]; q.x = clamp(q.x, q.w / 2 + 4, W - q.w / 2 - 4); }
+      const { left: A2, right: B2 } = this.F;
+      A2.pos = L.left; B2.pos = L.right;
+      A2.platePos = { ...L.plateL, w: L.pw }; B2.platePos = { ...L.plateR, w: L.pwR };
     }
-    for (const k of ['left', 'right']) { const q = L[k]; q.x = clamp(q.x, q.w / 2 + 4, W - q.w / 2 - 4); }
     this.L = L;
     // Band + edges
     const band = this.$.band.style;
@@ -360,21 +538,22 @@ export class BattleScene {
     }
     this.$.head.style.top = `${L.bTop + (portrait ? Math.max(sa.t - L.bTop + 4, 14) : 14)}px`;
     // Fighters
-    for (const side of ['left', 'right']) {
-      const f = this.F[side], p = L[side];
-      const s = f.root.style;
+    for (const f of this.list) {
+      const p = f.pos, s = f.root.style;
       s.left = `${p.x - p.w / 2}px`; s.top = `${p.y - p.h}px`; s.width = `${p.w}px`; s.height = `${p.h}px`;
       Object.assign(f.base.style, { left: s.left, top: s.top, width: s.width, height: s.height });
-      f.pos = p;
-      const pl = side === 'left' ? L.plateL : L.plateR;
-      f.plate.style.left = `${pl.x}px`; f.plate.style.top = `${pl.y}px`; f.plate.style.width = `${side === 'right' ? L.pwR : L.pw}px`;
+      if (p.platW) f.base.style.setProperty('--bt-platw', `${p.platW}px`); else f.base.style.removeProperty('--bt-platw');
+      const pl = f.platePos;
+      f.plate.style.left = `${pl.x}px`; f.plate.style.top = `${pl.y}px`; f.plate.style.width = `${pl.w}px`;
+      f.root.style.zIndex = f.z;
     }
     // Arena ring
     const ar = this.$.arena.style;
     ar.left = `${L.arena.x - L.arena.r}px`; ar.top = `${L.arena.y - L.arena.r - L.bTop}px`;
     ar.width = ar.height = `${L.arena.r * 2}px`;
-    this.$.vs.style.left = `${L.dice.x + L.dice.w / 2}px`;
-    this.$.vs.style.top = `${L.dice.y + L.dice.h * 0.45}px`;
+    const vsAt = L.vsAt || { x: L.dice.x + L.dice.w / 2, y: L.dice.y + L.dice.h * 0.45 };
+    this.$.vs.style.left = `${vsAt.x}px`;
+    this.$.vs.style.top = `${vsAt.y}px`;
     // Canvases
     const dpr = Math.min(window.devicePixelRatio || 1, 2);
     const fx = this.$.fx;
@@ -386,12 +565,143 @@ export class BattleScene {
     if (key !== this._bgKey) { this._bgKey = key; this._drawBackdrop(); }
   }
 
+  // Brawl formations. x: fraction of width, y: feet as a fraction of the stage band,
+  // s: size scale (depth), sw: slot width (fraction of width), row 0 = back, 1 = front.
+  // Order is a "snake" so neighbouring indices stand next to each other (guild-mates
+  // are passed in consecutively and so end up side by side).
+  _slots(n, portrait) {
+    n = clamp(n, 1, 6);
+    const P = (x, y, s, sw, row) => ({ x, y, s, sw, row });
+    if (portrait) {
+      const T = {
+        1: [P(0.5, 0.8, 1, 0.7, 1)],
+        2: [P(0.3, 0.84, 1, 0.56, 1), P(0.68, 0.4, 0.94, 0.6, 0)],
+        3: [P(0.26, 0.85, 1, 0.48, 1), P(0.74, 0.85, 1, 0.48, 1), P(0.5, 0.39, 0.95, 0.6, 0)],
+        4: [P(0.26, 0.86, 1, 0.48, 1), P(0.74, 0.86, 1, 0.48, 1), P(0.73, 0.4, 0.9, 0.46, 0), P(0.27, 0.4, 0.9, 0.46, 0)],
+        5: [P(0.26, 0.86, 1, 0.48, 1), P(0.74, 0.86, 1, 0.48, 1), P(0.825, 0.425, 0.82, 0.33, 0), P(0.5, 0.335, 0.78, 0.33, 0), P(0.175, 0.425, 0.82, 0.33, 0)],
+        6: [P(0.175, 0.83, 0.92, 0.33, 1), P(0.5, 0.895, 0.96, 0.33, 1), P(0.825, 0.83, 0.92, 0.33, 1), P(0.825, 0.425, 0.82, 0.33, 0), P(0.5, 0.335, 0.78, 0.33, 0), P(0.175, 0.425, 0.82, 0.33, 0)],
+      };
+      return T[n];
+    }
+    // Landscape: an amphitheatre "U" around the arena. Ends forward, middle back.
+    const T = {
+      1: [P(0.5, 0.78, 1, 0.4, 1)],
+      2: [P(0.24, 0.78, 1, 0.4, 1), P(0.76, 0.78, 1, 0.4, 1)],
+      3: [P(0.17, 0.8, 1, 0.3, 1), P(0.5, 0.5, 0.86, 0.3, 0), P(0.83, 0.8, 1, 0.3, 1)],
+      4: [P(0.12, 0.8, 1, 0.24, 1), P(0.36, 0.53, 0.86, 0.24, 0), P(0.64, 0.53, 0.86, 0.24, 0), P(0.88, 0.8, 1, 0.24, 1)],
+      5: [P(0.1, 0.8, 0.96, 0.2, 1), P(0.29, 0.57, 0.86, 0.2, 0), P(0.5, 0.47, 0.78, 0.2, 0), P(0.71, 0.57, 0.86, 0.2, 0), P(0.9, 0.8, 0.96, 0.2, 1)],
+      6: [P(0.085, 0.81, 0.94, 0.17, 1), P(0.25, 0.6, 0.86, 0.17, 0), P(0.415, 0.48, 0.78, 0.17, 0), P(0.585, 0.48, 0.78, 0.17, 0), P(0.75, 0.6, 0.86, 0.17, 0), P(0.915, 0.81, 0.94, 0.17, 1)],
+    };
+    return T[n];
+  }
+
+  _layoutBrawl(L) {
+    const { W, H, portrait, sa } = L;
+    const list = this.list;
+    // Re-slot on orientation change (sides and facing can flip).
+    const slots = this._slots(list.length, portrait);
+    list.forEach((f, i) => {
+      f.slot = slots[i];
+      const side = f.slot.x <= 0.5 ? 'left' : 'right';
+      if (side !== f.side) { f.side = side; this._applySide(f); }
+    });
+    if (portrait) {
+      L.bTop = Math.max(sa.t - 14, 10);
+      L.bBot = H - Math.max(sa.b * 0.5, 10);
+    } else {
+      const bh0 = Math.min(H - 16, Math.max(H * 0.9, 360));
+      L.bTop = Math.max((H - bh0) / 2, sa.t);
+      L.bBot = Math.min(L.bTop + bh0, H - sa.b);
+    }
+    const bh = L.bBot - L.bTop;
+    L.horizon = L.bTop + bh * (portrait ? 0.27 : 0.4);
+    const plateH = portrait ? 44 : W > 1000 ? 52 : 46;
+    L.plateH = plateH;
+    const headH = Math.max(sa.t, L.bTop) + (portrait ? 58 : 50);
+    const unit = portrait ? Math.min(W * 0.52, bh * 0.25) : Math.min(bh * 0.42, W * 0.19);
+    for (const f of list) {
+      const sl = f.slot, a = f.aspect || 0.9;
+      let S = unit * sl.s;
+      let w = a >= 1 ? S : S * a, h = a >= 1 ? S / a : S;
+      // Three abreast the art may overlap its neighbours a little (depth sorts it); plates never do.
+      const maxW = sl.sw * W * (sl.sw < 0.4 ? 1.06 : a >= 1.2 ? 1.02 : 0.9);
+      if (w > maxW) { h *= maxW / w; w = maxW; }
+      let y = L.bTop + sl.y * bh;
+      y = Math.min(y, L.bBot - plateH - 14);
+      y = Math.max(y, headH + h * 0.92);            // keep heads clear of the title
+      let x = clamp(sl.x * W, w / 2 + 4 + sa.l, W - w / 2 - 4 - sa.r);
+      const platW = Math.min(w * 1.18, sl.sw * W * 1.02, Math.max(h * 1.3, w * 0.9));
+      f.pos = { x, y, w, h, platW };
+      f.scale = sl.s;
+      const pw = clamp(sl.sw * W - (sl.sw < 0.4 ? 12 : 8), 100, portrait ? 190 : 230);
+      f.platePos = { x: clamp(x - pw / 2, 6 + sa.l, W - pw - 6 - sa.r), y: y + 8, w: pw };
+    }
+    // Depth order: lower feet = closer to the camera = drawn on top.
+    [...list].sort((a, b) => a.pos.y - b.pos.y).forEach((f, i) => { f.z = String(2 + i); });
+    // Dice area: the open floor between the back row's plates and the front row.
+    const back = list.filter((f) => f.slot.row === 0), front = list.filter((f) => f.slot.row === 1);
+    const backBot = back.length ? Math.max(...back.map((f) => f.platePos.y + plateH)) : headH + 10;
+    if (portrait) {
+      const frontTop = front.length ? Math.min(...front.map((f) => f.pos.y - f.pos.h * 0.72)) : L.bBot - 40;
+      const top = backBot + 6;
+      const bot = Math.max(top + 150, frontTop);
+      L.dice = { x: W * 0.05, y: top, w: W * 0.9, h: bot - top };
+    } else {
+      // Between the inner edges of the forward fighters' plates.
+      let x0 = W * 0.28, x1 = W * 0.72;
+      if (front.length >= 2) {
+        const lf = front.filter((f) => f.pos.x < W / 2), rf = front.filter((f) => f.pos.x > W / 2);
+        if (lf.length) x0 = Math.max(...lf.map((f) => Math.max(f.platePos.x + f.platePos.w, f.pos.x + f.pos.w / 2))) + 8;
+        if (rf.length) x1 = Math.min(...rf.map((f) => Math.min(f.platePos.x, f.pos.x - f.pos.w / 2))) - 8;
+      }
+      const mid = list.filter((f) => f.slot.row === 0 && Math.abs(f.slot.x - 0.5) > 0.2);
+      for (const f of mid) {
+        if (f.pos.x < W / 2) x0 = Math.max(x0, Math.min(f.platePos.x + f.platePos.w, W * 0.36) + 6);
+        else x1 = Math.min(x1, Math.max(f.platePos.x, W * 0.64) - 6);
+      }
+      if (x1 - x0 < W * 0.26) { const c = (x0 + x1) / 2; x0 = c - W * 0.13; x1 = c + W * 0.13; }
+      // Only the fighters standing behind the middle of the arena cap its top.
+      const mids = back.filter((f) => Math.abs(f.slot.x - 0.5) < 0.2);
+      const top = (mids.length ? Math.max(...mids.map((f) => f.platePos.y + plateH)) : headH + 10) + 4;
+      const bot = L.bBot - 12;
+      L.dice = { x: x0, y: Math.min(top, bot - 90), w: x1 - x0, h: Math.max(90, bot - top) };
+    }
+    L.arena = { x: L.dice.x + L.dice.w / 2, y: L.dice.y + L.dice.h * 0.58, r: Math.min(L.dice.w * 0.52, 210) };
+    L.vsAt = { x: W / 2, y: L.dice.y + L.dice.h * 0.45 };
+  }
+
   diceArea() {
     if (!this.L) return new DOMRect(innerWidth * 0.2, innerHeight * 0.35, innerWidth * 0.6, innerHeight * 0.3);
     const r = this.root.getBoundingClientRect();
     const d = this.L.dice;
     return new DOMRect(r.left + d.x, r.top + d.y, d.w, d.h);
   }
+  // A dice landing zone biased toward one fighter (or the middle of several):
+  // the part of the arena nearest to them. diceAreaFor() with no ids === diceArea().
+  diceAreaFor(ids) {
+    if (ids == null || !this.L) return this.diceArea();
+    const fs = (Array.isArray(ids) ? ids : [ids]).map((k) => this._get(k)).filter(Boolean);
+    if (!fs.length) return this.diceArea();
+    const d = this.L.dice, r = this.root.getBoundingClientRect();
+    const cx = fs.reduce((a, f) => a + f.pos.x, 0) / fs.length;
+    const cy = fs.reduce((a, f) => a + f.pos.y - f.pos.h * 0.3, 0) / fs.length;
+    const w = Math.max(d.w * 0.62, Math.min(d.w, 200)), h = Math.max(d.h * 0.7, Math.min(d.h, 130));
+    const x = clamp(cx - w / 2, d.x, d.x + d.w - w), y = clamp(cy - h / 2, d.y, d.y + d.h - h);
+    return new DOMRect(r.left + x, r.top + y, w, h);
+  }
+
+  // Spotlight some fighters (e.g. whoever is rolling); everyone else dims a little.
+  // focus(null) clears it.
+  focus(ids) {
+    const set = ids == null ? null : new Set((Array.isArray(ids) ? ids : [ids]).map((k) => this._get(k)).filter(Boolean));
+    this._focus = set;
+    for (const f of this.list) {
+      const dim = !!set && !set.has(f);
+      f.root.classList.toggle('dimmed', dim); f.plate.classList.toggle('dimmed', dim);
+      f.root.classList.toggle('focused', !!set && set.has(f)); f.plate.classList.toggle('focused', !!set && set.has(f));
+    }
+  }
+
 
   // ------------------------------------------------------------- backdrop
   _drawBackdrop() {
@@ -626,8 +936,9 @@ export class BattleScene {
   }
 
   // ------------------------------------------------------------- HP
+  // setHp('left'|'right'|id, hp). setHpOf(id, hp) is the same thing, by id.
   setHp(side, hp) {
-    const f = this.F[side];
+    const f = this._get(side);
     if (!f) return;
     hp = clamp(Math.round(hp), 0, f.maxHp);
     const prev = f.hp;
@@ -635,6 +946,8 @@ export class BattleScene {
     f.hp = hp;
     this._paintHp(f, hp, false, prev);
   }
+
+  setHpOf(id, hp) { return this.setHp(id, hp); }
 
   _paintHp(f, hp, instant, prev = hp) {
     const pct = hp / f.maxHp;
@@ -693,15 +1006,26 @@ export class BattleScene {
     this._q = p;
     return p;
   }
-  _shake(power = 1, dur = 380) {
+  // Camera shake. With a direction (ux, uy) it kicks along the blow first, then
+  // settles with a damped wobble, which reads as weight instead of jitter.
+  _shake(power = 1, dur = 380, ux = 0, uy = 0) {
     if (this.reducedMotion || power <= 0) return Promise.resolve();
     const kf = [];
-    const n = 9;
+    const n = 12, amp = power * 10, dirx = ux || 0, diry = uy || 0, has = !!(dirx || diry);
     for (let i = 0; i <= n; i++) {
-      const k = 1 - i / n, m = power * 9 * k;
-      kf.push({ transform: i === n ? 'none' : `translate(${rand(-m, m).toFixed(1)}px,${rand(-m, m).toFixed(1)}px) rotate(${rand(-0.6, 0.6) * power * k}deg)` });
+      const t = i / n, k = Math.pow(1 - t, 2.2);
+      if (i === n) { kf.push({ transform: 'none' }); break; }
+      const osc = Math.cos(t * Math.PI * 5.5) * k * amp;
+      const jx = rand(-1, 1) * amp * k * (has ? 0.35 : 1), jy = rand(-1, 1) * amp * k * (has ? 0.35 : 1);
+      const x = has ? dirx * osc + jx : jx, y = has ? diry * osc * 0.8 + jy : jy;
+      kf.push({ transform: `translate(${x.toFixed(1)}px,${y.toFixed(1)}px) rotate(${(rand(-0.5, 0.5) * power * k + (has ? dirx * 0.5 * power * k : 0)).toFixed(2)}deg)` });
     }
     return this._a(this.$.cam, kf, { duration: dur, easing: 'linear' });
+  }
+  // Anime "impact frame": the whole stage inverts for a couple of frames.
+  _impactFrame(ms = 70) {
+    if (this.reducedMotion || this._instant) return Promise.resolve();
+    return this._a(this.$.impact, [{ opacity: 1 }, { opacity: 1, offset: 0.55 }, { opacity: 0, offset: 0.56 }, { opacity: 0 }], { duration: ms, easing: 'linear' });
   }
   _flash(color = '#ffffff', peak = 0.85, dur = 260) {
     if (this.reducedMotion) peak *= 0.35;
@@ -716,8 +1040,11 @@ export class BattleScene {
   _pop(x, y, html, cls, o = {}) {
     if (this._instant) return Promise.resolve();
     const n = el('div', `bt-pop ${cls || ''}`, html);
-    n.style.left = `${x}px`; n.style.top = `${y}px`;
     this.$.pops.appendChild(n);
+    // Keep the whole word on screen, even big crits beside the edge of a 360px phone.
+    const hw = (n.offsetWidth * (o.peak ?? 1.45)) / 2 * 0.8, W = this.L?.W || innerWidth;
+    x = hw * 2 + 12 < W ? clamp(x, hw + 6, W - hw - 6) : W / 2;
+    n.style.left = `${x}px`; n.style.top = `${Math.max(y, (this.L?.bTop || 0) + 30)}px`;
     const rm = this.reducedMotion;
     const life = o.life ?? 1100;
     const rise = o.rise ?? 50;
@@ -737,6 +1064,21 @@ export class BattleScene {
     return p;
   }
 
+  // Shared by both intros: dim, band, gold edges, title, arena ring, platforms.
+  _introStage() {
+    const rm = this.reducedMotion;
+    const dimP = this._a(this.$.dim, [{ opacity: 0 }, { opacity: 1 }], { duration: 260, fill: 'both' });
+    const ease = 'cubic-bezier(.2,.9,.25,1)';
+    this._a(this.$.band, rm ? [{ opacity: 0 }, { opacity: 1 }] : [{ transform: 'scaleY(0)', opacity: 0.4 }, { transform: 'scaleY(1)', opacity: 1 }], { duration: 300, easing: ease, fill: 'backwards' });
+    this._a(this.$.edgeT.firstChild, [{ transform: 'scaleX(0)' }, { transform: 'scaleX(1)' }], { duration: 380, delay: 80, easing: ease, fill: 'backwards' });
+    this._a(this.$.edgeB.firstChild, [{ transform: 'scaleX(0)' }, { transform: 'scaleX(1)' }], { duration: 380, delay: 80, easing: ease, fill: 'backwards' });
+    this._a(this.$.head, [{ opacity: 0, transform: 'translate(-50%,-14px)' }, { opacity: 1, transform: 'translate(-50%,0)' }], { duration: 360, delay: 220, easing: ease, fill: 'backwards' });
+    this._a(this.$.arena, [{ opacity: 0, transform: 'scale(.4)' }, { opacity: 1, transform: 'scale(1)' }], { duration: 600, delay: 300, easing: ease, fill: 'backwards' });
+    this.list.forEach((f, i) => this._a(f.plat, [{ opacity: 0, transform: 'scale(.3)' }, { opacity: 1, transform: 'scale(1)' }], { duration: 420, delay: 240 + i * 50, easing: ease, fill: 'backwards' }));
+    if (!rm) this._speedLines();
+    return dimP;
+  }
+
   // ------------------------------------------------------------- intro
   async _intro() {
     const { left: A, right: B } = this.F;
@@ -749,15 +1091,8 @@ export class BattleScene {
       this.$.vs.style.opacity = '0';
       return;
     }
-    const dimP = this._a(this.$.dim, [{ opacity: 0 }, { opacity: 1 }], { duration: 260, fill: 'both' });
+    const dimP = this._introStage();
     const ease = 'cubic-bezier(.2,.9,.25,1)';
-    this._a(this.$.band, rm ? [{ opacity: 0 }, { opacity: 1 }] : [{ transform: 'scaleY(0)', opacity: 0.4 }, { transform: 'scaleY(1)', opacity: 1 }], { duration: 300, easing: ease, fill: 'backwards' });
-    this._a(this.$.edgeT.firstChild, [{ transform: 'scaleX(0)' }, { transform: 'scaleX(1)' }], { duration: 380, delay: 80, easing: ease, fill: 'backwards' });
-    this._a(this.$.edgeB.firstChild, [{ transform: 'scaleX(0)' }, { transform: 'scaleX(1)' }], { duration: 380, delay: 80, easing: ease, fill: 'backwards' });
-    this._a(this.$.head, [{ opacity: 0, transform: 'translate(-50%,-14px)' }, { opacity: 1, transform: 'translate(-50%,0)' }], { duration: 360, delay: 220, easing: ease, fill: 'backwards' });
-    this._a(this.$.arena, [{ opacity: 0, transform: 'scale(.4)' }, { opacity: 1, transform: 'scale(1)' }], { duration: 600, delay: 300, easing: ease, fill: 'backwards' });
-    for (const f of [A, B]) this._a(f.plat, [{ opacity: 0, transform: 'scale(.3)' }, { opacity: 1, transform: 'scale(1)' }], { duration: 420, delay: 260, easing: ease, fill: 'backwards' });
-    if (!rm) this._speedLines();
     // Fighters slide in from both sides (bosses rise up heavier).
     const slide = (f, dir, delay, bossy) => {
       const kf = rm ? [{ opacity: 0 }, { opacity: 1 }]
@@ -808,22 +1143,120 @@ export class BattleScene {
     this._stop(this.$.vs);
   }
 
-  // ------------------------------------------------------------- strike
-  strike(from, opts = {}) { return this._enqueue(() => this._strike(from, opts)); }
+  // Brawl intro: fighters burst in from the nearest edge (the middle one drops from
+  // above), each landing kicks up dust and a thump, then a "BRAWL!" slam.
+  async _introBrawl() {
+    const L = this.L, rm = this.reducedMotion, list = this.list;
+    this.$.vs.style.opacity = '0';
+    for (const f of list) { f.plate.style.opacity = '0'; f.act.style.opacity = ''; }
+    if (this._instant) { for (const f of list) f.plate.style.opacity = ''; return; }
+    this._introStage();
+    const ease = 'cubic-bezier(.2,.9,.25,1)';
+    // Back row first, then the front row, alternating sides for rhythm.
+    const order = [...list].sort((a, b) => (a.slot.row - b.slot.row) || (a.pos.x - b.pos.x));
+    sfx('whoosh', 0.9);
+    const lands = order.map((f, i) => {
+      const center = Math.abs(f.pos.x - L.W / 2) < L.W * 0.1;
+      const dir = f.pos.x < L.W / 2 ? -1 : 1;
+      const delay = 140 + i * 95;
+      const far = dir * (Math.abs((dir > 0 ? L.W : 0) - f.pos.x) + f.pos.w);
+      const kf = rm ? [{ opacity: 0 }, { opacity: 1 }] : center ? [
+        { transform: `translateY(${-(f.pos.y + 40)}px) scale(.9,1.2)`, opacity: 1 },
+        { transform: 'translateY(0) scale(.9,1.12)', offset: 0.62, easing: 'cubic-bezier(.3,0,.4,1)' },
+        { transform: 'translateY(0) scale(1.18,.8)', offset: 0.76 },
+        { transform: 'translateY(-8px) scale(.97,1.04)', offset: 0.88 },
+        { transform: 'none' },
+      ] : [
+        { transform: `translate(${far}px,-30px) skewX(${-dir * 16}deg)`, opacity: 1 },
+        { transform: `translate(${-dir * 16}px,0) skewX(${dir * 7}deg) scale(1.08,.92)`, offset: 0.7 },
+        { transform: 'translate(0,0) skewX(0deg)' },
+      ];
+      return this._a(f.act, kf, { duration: center ? 560 : 500, delay, easing: center ? 'linear' : ease, fill: 'backwards' }).then(() => {
+        if (!this._open) return;
+        this._dust(f.pos.x, f.pos.y, f.pos.w * 0.7, 12);
+        this._ring(f.pos.x, f.pos.y, 6, f.pos.w * 0.7, f.teamColor || '#ffe27a', 0.3, 420, 3);
+        this._shake(0.35, 200, 0, 1);
+        sfx('hit', 0.3);
+      });
+    });
+    await Promise.all(lands);
+    if (!this._open) return;
+    // BRAWL! slam, letter by letter.
+    const vs = this.$.vs;
+    vs.style.opacity = '';
+    sfx('vs', 1);
+    const vsP = this._a(vs, rm ? [{ opacity: 0 }, { opacity: 1, offset: 0.2 }, { opacity: 1, offset: 0.8 }, { opacity: 0 }] : [
+      { opacity: 0, transform: 'translate(-50%,-50%) scale(2.6) rotate(-10deg)' },
+      { opacity: 1, transform: 'translate(-50%,-50%) scale(.94) rotate(-5deg)', offset: 0.12, easing: 'cubic-bezier(.3,1.4,.5,1)' },
+      { opacity: 1, transform: 'translate(-50%,-50%) scale(1) rotate(-5deg)', offset: 0.22 },
+      { opacity: 1, transform: 'translate(-50%,-50%) scale(1.05) rotate(-5deg)', offset: 0.74 },
+      { opacity: 0, transform: 'translate(-50%,-50%) scale(1.5) rotate(-5deg)' },
+    ], { duration: 1150, easing: 'linear', fill: 'forwards' });
+    if (!rm) [...vs.children].forEach((sp, i) => {
+      const lift = (i % 2 ? 7 : -7);
+      this._a(sp, [
+        { transform: `translateY(${lift - 60}px) scale(1.6)`, opacity: 0 },
+        { transform: `translateY(${lift + 6}px) scale(.9)`, opacity: 1, offset: 0.55, easing: 'cubic-bezier(.3,1.5,.5,1)' },
+        { transform: `translateY(${lift}px) scale(1)`, opacity: 1 },
+      ], { duration: 260, delay: i * 45, easing: 'ease-out', fill: 'both' });
+    });
+    await this._wait(150);
+    this._impactFrame(60);
+    this._flash('#fff6d8', 0.6, 240);
+    const cx = L.vsAt.x, cy = L.vsAt.y;
+    this._ring(cx, cy, 30, Math.min(L.W, 640) * 0.6, '#fff3c4', 0.45, 560, 4);
+    this._ring(cx, cy, 20, Math.min(L.W, 640) * 0.42, '#ff9a3a', 0.45, 480, 3);
+    this._burst(cx, cy, 34, { color: '#ffe27a', speed: 640, life: 0.55, size: 2.4 });
+    this._shake(1.1, 420, 0, 1);
+    // Everyone flinches at the slam.
+    if (!rm) for (const f of list) this._a(f.act, [{ transform: 'none' }, { transform: 'translateY(-10px) scale(1.04,.97)', offset: 0.3 }, { transform: 'none' }], { duration: 360, delay: rand(0, 80) });
+    list.forEach((f, i) => {
+      f.plate.style.opacity = '';
+      this._a(f.plate, [{ opacity: 0, transform: 'translateY(14px) scale(.94)' }, { opacity: 1, transform: 'none' }], { duration: 360, delay: 80 + i * 60, easing: ease, fill: 'backwards' });
+    });
+    await vsP;
+    vs.style.opacity = '0';
+    this._stop(vs);
+    for (const sp of vs.children) this._stop(sp);
+  }
 
-  async _strike(from, { dmg = 0, crit = false, miss = false, hp } = {}) {
-    const atk = this.F[from], def = this.F[this._other(from)];
-    if (!atk || !def || atk.dead) return;
+  // ------------------------------------------------------------- strike
+  // strike('left'|'right'|id, { dmg, crit, miss, hp, to? }). In a duel the target is
+  // the other fighter; in a brawl pass `to` (or use strikeAt), else the nearest enemy.
+  strike(from, opts = {}) { return this._enqueue(() => this._strike(from, opts)); }
+  // strikeAt(fromId, toId, { dmg, crit, miss, hp }): a hit that travels between two
+  // specific fighters. `hp` (optional) is the target's HP after the hit.
+  strikeAt(fromId, toId, opts = {}) { return this._enqueue(() => this._strike(fromId, { ...opts, to: toId })); }
+
+  _target(atk) {
+    const foes = this.list.filter((f) => f !== atk && !f.dead && f.team !== atk.team);
+    const pool = foes.length ? foes : this.list.filter((f) => f !== atk && !f.dead);
+    pool.sort((a, b) => Math.hypot(a.pos.x - atk.pos.x, a.pos.y - atk.pos.y) - Math.hypot(b.pos.x - atk.pos.x, b.pos.y - atk.pos.y));
+    return pool[0] || null;
+  }
+
+  async _strike(from, { dmg = 0, crit = false, miss = false, hp, to } = {}) {
+    const brawl = this.kind === 'brawl';
+    const atk = this._get(from);
+    if (!atk || atk.dead) return;
+    let def = to != null ? this._get(to) : null;
+    if (!def) def = brawl ? this._target(atk) : this.list.find((f) => f !== atk);
+    if (!def || def === atk) return;
     const rm = this.reducedMotion;
+    // If a new scene opens mid-strike, stop touching these (reused) fighters.
+    const gen = this._gen, live = () => gen === this._gen && this._open;
     const A = this._c(atk, 0), D = this._c(def, 0);
     const vx = D.x - A.x, vy = D.y - A.y, dist = Math.hypot(vx, vy) || 1;
     const ux = vx / dist, uy = vy / dist;
     const portrait = this.L.portrait;
-    const reach = portrait ? dist * (uy < 0 ? 0.5 : 0.36) : Math.max(20, dist - (atk.pos.w + def.pos.w) * 0.38);
+    const reach = brawl ? Math.max(16, dist - (atk.pos.w + def.pos.w) * 0.36)
+      : portrait ? dist * (uy < 0 ? 0.5 : 0.36) : Math.max(20, dist - (atk.pos.w + def.pos.w) * 0.38);
     const dx = rm ? ux * 16 : ux * reach, dy = rm ? uy * 16 : uy * reach;
-    // Depth cue on the portrait diagonal: shrink going back, grow coming forward.
-    const ds = portrait && !rm ? (uy < 0 ? 0.86 : 1.06) : 1;
-    atk.root.style.zIndex = '6';
+    // Depth cue: shrink going back, grow coming forward.
+    const ds = rm ? 1 : brawl ? clamp((def.scale || 1) / (atk.scale || 1), 0.82, 1.16) * (uy < -0.3 ? 0.95 : uy > 0.3 ? 1.03 : 1) : portrait ? (uy < 0 ? 0.86 : 1.06) : 1;
+    atk.root.style.zIndex = '30';
+    // In a brawl a fighter may have to turn around to face its target.
+    const unturn = this._faceToward(atk, ux);
     const lean = Math.sign(ux || 1) * 8;
     const blocked = !miss && dmg <= 0;
 
@@ -851,6 +1284,7 @@ export class BattleScene {
     if (miss) {
       // Defender sidesteps just before contact.
       await this._wait(dashDur * 0.55);
+      if (!live()) return;
       sfx('miss', 1);
       const hop = rm ? [{ opacity: 1 }, { opacity: 0.4, offset: 0.4 }, { opacity: 1 }] : [
         { transform: 'none' },
@@ -866,10 +1300,12 @@ export class BattleScene {
       this._streak(D.x - ux * 30, this._c(def, 0.5).y, ux, uy);
       await this._wait(200);
       await this._return(atk, dx, dy, lean, 380, true, ds);
+      unturn();
       await this._wait(260);
       return;
     }
     await dashAnim;
+    if (!live()) return;
     // IMPACT
     const hit = this._c(def, 0.5);
     const ix = hit.x - ux * def.pos.w * 0.22, iy = hit.y - uy * def.pos.h * 0.1;
@@ -882,20 +1318,34 @@ export class BattleScene {
       const c = this._c(def, 0.82);
       this._pop(c.x, c.y, 'BLOCKED', 'blocked', { peak: 1.2 });
       await this._return(atk, dx, dy, lean, 360, false, ds);
+      unturn();
       await this._wait(320);
       return;
     }
     sfx(crit ? 'crit' : 'hit', crit ? 1 : clamp(0.5 + dmg * 0.08, 0.5, 0.9));
+    const big = crit || dmg >= 5;
+    if (crit) this._impactFrame(70);
     this._slash(ix, iy, crit ? def.pos.h * 0.75 : def.pos.h * 0.55, ux, crit ? '#ffe27a' : '#ffffff');
-    this._burst(ix, iy, crit ? 46 : 26, { color: crit ? '#ffd34a' : '#ffe9c8', speed: crit ? 760 : 520, life: crit ? 0.6 : 0.42, size: crit ? 2.6 : 2 });
+    if (crit) this._slash(ix, iy, def.pos.h * 0.62, -ux, '#fff6d8', 0.05);
+    this._burst(ix, iy, crit ? 40 : 22, { color: crit ? '#ffd34a' : '#ffe9c8', speed: crit ? 760 : 520, life: crit ? 0.6 : 0.42, size: crit ? 2.6 : 2 });
+    // Sparks keep travelling along the blow, plus radial impact lines.
+    this._burst(ix, iy, crit ? 30 : 16, { color: crit ? '#fff1b0' : '#ffd9a0', speed: crit ? 980 : 720, life: 0.4, size: crit ? 2.8 : 2.2, spread: Math.PI * 0.55, dir: Math.atan2(uy, ux), len: 0.05 });
+    this._impactLines(ix, iy, crit ? 14 : big ? 10 : 7, crit ? def.pos.h * 0.95 : def.pos.h * 0.6, crit ? '#fff3c4' : '#ffffff');
+    this._chips(ix, iy, crit ? 14 : 7, ux, uy);
     this._star(ix, iy, crit ? 150 : 90, crit ? '#fff2a8' : '#ffffff', crit ? 260 : 180);
-    if (crit) { this._flash('#fff3c4', 0.7, 300); this._ring(ix, iy, 20, def.pos.h * 1.3, '#ffd34a', 1, 460, 4); }
-    else this._flash('#ffffff', 0.25, 140);
+    if (crit) { this._flash('#fff3c4', 0.6, 300); this._ring(ix, iy, 20, def.pos.h * 1.3, '#ffd34a', 1, 460, 4); }
+    else { this._flash('#ffffff', 0.22, 130); this._ring(ix, iy, 10, def.pos.h * 0.6, '#ffffff', 1, 260, 2.5); }
     // Hit-stop: everything freezes for a beat on contact.
     this._tintFlash(def, crit ? '#ffffff' : '#ff3030', crit);
-    await this._wait(crit ? 150 : 85);
-    this._shake(crit ? 1.6 : 0.65, crit ? 520 : 300);
-    if (crit && !rm) this._a(this.$.cam, [{ transform: 'scale(1)' }, { transform: 'scale(1.05)', offset: 0.2 }, { transform: 'scale(1)' }], { duration: 600, easing: 'ease-out', composite: 'add' });
+    atk.root.classList.add('frozen'); def.root.classList.add('frozen');
+    await this._wait(crit ? 160 : big ? 110 : 85);
+    atk.root.classList.remove('frozen'); def.root.classList.remove('frozen');
+    this._shake(crit ? 1.5 : big ? 0.9 : 0.6, crit ? 540 : 320, ux, uy);
+    if (crit && !rm) {
+      this.$.cam.style.transformOrigin = `${(ix + this.L.W / 2) / 2}px ${(iy + this.L.H / 2) / 2}px`;  // halfway to centre so edges stay on screen
+      this._a(this.$.cam, [{ transform: 'scale(1)' }, { transform: 'scale(1.06)', offset: 0.18 }, { transform: 'scale(1)' }], { duration: 620, easing: 'ease-out', composite: 'add' })
+        .then(() => { this.$.cam.style.transformOrigin = ''; });
+    }
     const kb = crit ? 46 : 24;
     this._a(def.act, rm ? [{ opacity: 1 }, { opacity: 0.5, offset: 0.3 }, { opacity: 1 }] : [
       { transform: 'none' },
@@ -904,8 +1354,9 @@ export class BattleScene {
       { transform: `translate(${-ux * 4}px,0) rotate(${-lean * 0.2}deg)`, offset: 0.8 },
       { transform: 'none' },
     ], { duration: crit ? 640 : 480 });
+    if (!live()) return;
     const newHp = hp != null ? hp : def.hp - dmg;
-    this.setHp(this._other(from), newHp);
+    this.setHp(def, newHp);
     const c = this._c(def, 0.86);
     if (crit) {
       this._pop(c.x, c.y - 44, 'CRITICAL!', 'critlabel', { peak: 1.3, life: 1250, rise: 30 });
@@ -914,7 +1365,21 @@ export class BattleScene {
       this._pop(c.x, c.y, String(dmg), 'dmg', { peak: 1.5 });
     }
     await this._return(atk, dx, dy, lean, crit ? 420 : 360, false, ds);
+    unturn();
     await this._wait(crit ? 380 : 260);
+  }
+
+  // Turn a fighter to look along ux for the length of an attack. Returns an undo.
+  _faceToward(f, ux) {
+    if (this.kind !== 'brawl' || Math.abs(ux) < 0.25) return () => {};
+    const want = Math.sign(ux);
+    if (f.faceDir === 0) {
+      f.turn.style.transform = `perspective(900px) rotateY(${want * 16}deg)`;
+      return () => { f.turn.style.transform = ''; };
+    }
+    if (f.faceDir === want) return () => {};
+    f.turn.classList.toggle('mirror');
+    return () => { f.turn.classList.toggle('mirror', f.mirror); };
   }
 
   _return(f, dx, dy, lean, dur, stumble = false, ds = 1) {
@@ -925,7 +1390,7 @@ export class BattleScene {
       { transform: `translate(${dx * 0.2}px,${dy * 0.2 - 18}px) rotate(${-lean * 0.3}deg)`, offset: 0.7 },
       { transform: 'none' },
     ];
-    return this._a(f.act, kf, { duration: dur, easing: 'cubic-bezier(.3,.6,.3,1)' }).then(() => { f.root.style.zIndex = ''; });
+    return this._a(f.act, kf, { duration: dur, easing: 'cubic-bezier(.3,.6,.3,1)' }).then(() => { f.root.style.zIndex = f.z || ''; });
   }
 
   _afterimages(f, kf, dur, n = 3) {
@@ -955,10 +1420,12 @@ export class BattleScene {
 
   // ------------------------------------------------------------- skill banner
   skill(side, text, opts = {}) { return this._enqueue(() => this._skill(side, text, opts)); }
+  skillOf(id, text, opts = {}) { return this.skill(id, text, opts); }
 
   async _skill(side, text, { color } = {}) {
-    const f = this.F[side];
+    const f = this._get(side);
     if (!f) return;
+    side = f.side;
     const t = String(text || '').toUpperCase();
     const col = color || (/HEAL|\+\d+\s*HP|REGEN/.test(t) ? '#5ef08a' : /SHIELD|BLOCK|ARMOR|GUARD|−|-\d/.test(t) && !/DMG|DAMAGE/.test(t) ? '#6fc3ff' : /RAGE|DMG|DAMAGE|POWER|ATK/.test(t) ? '#ff6a3a' : '#f2c443');
     sfx('whoosh', 0.6);
@@ -967,9 +1434,10 @@ export class BattleScene {
     n.style.setProperty('--sk', col);
     n.innerHTML = `<div class="bt-skill-rib"></div><div class="bt-skill-txt">${escapeHtml(text)}</div><div class="bt-skill-glint"></div>`;
     const L = this.L;
-    const bw = Math.min(L.W * 0.86, Math.max(220, f.pos.w * 1.25));
+    const brawl = this.kind === 'brawl';
+    const bw = Math.min(L.W - 16, L.W * 0.9, Math.max(brawl ? 200 : 220, f.pos.w * 1.25, String(text || '').length * 19 + 40));
     const bx = clamp(c.x, bw / 2 + 8, L.W - bw / 2 - 8);
-    const by = this.L.portrait && side === 'right' ? Math.max(c.y + f.pos.h * 0.12, L.bTop + 80) : c.y + f.pos.h * 0.12;
+    const by = brawl ? Math.max(c.y + f.pos.h * 0.12, L.bTop + 84) : this.L.portrait && side === 'right' ? Math.max(c.y + f.pos.h * 0.12, L.bTop + 80) : c.y + f.pos.h * 0.12;
     n.style.left = `${bx}px`; n.style.top = `${by}px`; n.style.width = `${bw}px`;
     this.$.pops.appendChild(n);
     if (this._instant) { n.remove(); return; }
@@ -1004,15 +1472,17 @@ export class BattleScene {
 
   // ------------------------------------------------------------- defeat
   defeat(side, killFx = 'none') { return this._enqueue(() => this._defeat(side, killFx)); }
+  defeatOf(id, killFx = 'none') { return this.defeat(id, killFx); }
 
   async _defeat(side, fxId) {
-    const f = this.F[side];
+    const f = this._get(side);
     if (!f || f.dead) return;
     f.dead = true;
-    if (f.hp > 0) this.setHp(side, 0);
+    if (f.hp > 0) this.setHp(f, 0);
     sfx('ko', 1);
     const rm = this.reducedMotion;
     if (this._instant) { f.act.style.opacity = '0'; f.plate.classList.add('dead'); return; }
+    const gen = this._gen;
     // Freeze idle so the art rect is stable for the canvas effects.
     f.root.classList.add('frozen');
     const id = rm && fxId !== 'none' ? 'fade' : fxId;
@@ -1024,6 +1494,7 @@ export class BattleScene {
       case 'fade': await this._a(f.act, [{ opacity: 1 }, { opacity: 0 }], { duration: 600, fill: 'forwards' }); f.act.style.opacity = '0'; break;
       default: await this._koClassic(f);
     }
+    if (gen !== this._gen) return;
     f.act.style.opacity = '0';
     f.root.classList.remove('frozen');
     // K.O. stamp on the plate
@@ -1045,7 +1516,7 @@ export class BattleScene {
   _alpha(f) {
     if (f.alphaMap) return f.alphaMap;
     const N = 48, c = document.createElement('canvas');
-    c.width = N; c.height = Math.round(N / (f.aspect || 1));
+    c.width = N; c.height = Math.max(1, Math.round(N / (f.natAspect || f.aspect || 1)));
     const g = c.getContext('2d', { willReadFrequently: true });
     let data = null;
     try { g.drawImage(f.img, 0, 0, c.width, c.height); data = g.getImageData(0, 0, c.width, c.height).data; } catch { /* tainted */ }
@@ -1226,13 +1697,14 @@ export class BattleScene {
     this.root.classList.add('bt-closing');
     if (!this._instant) {
       sfx('whoosh', 0.5);
-      const { left: A, right: B } = this.F;
       const ease = 'cubic-bezier(.6,0,.8,.4)';
       if (!rm) {
-        this._a(A.act, [{ transform: 'none' }, { transform: `translateX(${-this.L.W * 0.7}px) skewX(12deg)` }], { duration: 340, easing: ease, fill: 'forwards' });
-        this._a(B.act, [{ transform: 'none' }, { transform: `translateX(${this.L.W * 0.7}px) skewX(-12deg)` }], { duration: 340, easing: ease, fill: 'forwards' });
+        for (const f of this.list) {
+          const d = f.side === 'left' ? -1 : 1;
+          this._a(f.act, [{ transform: 'none' }, { transform: `translateX(${d * this.L.W * 0.7}px) skewX(${-d * 12}deg)` }], { duration: 340, easing: ease, fill: 'forwards' });
+        }
       }
-      for (const f of [A, B]) this._a(f.plate, [{ opacity: 1 }, { opacity: 0, transform: 'translateY(12px)' }], { duration: 220, fill: 'forwards' });
+      for (const f of this.list) this._a(f.plate, [{ opacity: 1 }, { opacity: 0, transform: 'translateY(12px)' }], { duration: 220, fill: 'forwards' });
       this._a(this.$.head, [{ opacity: 1 }, { opacity: 0 }], { duration: 200, fill: 'forwards' });
       await this._wait(180);
       await Promise.all([
@@ -1248,7 +1720,7 @@ export class BattleScene {
     this.root.style.display = 'none';
     this.root.setAttribute('aria-hidden', 'true');
     this.root.classList.remove('bt-closing');
-    for (const f of Object.values(this.F)) { f.act.style.opacity = ''; f.tint.style.opacity = ''; }
+    for (const f of this.pool) { f.act.style.opacity = ''; f.tint.style.opacity = ''; f.turn.style.transform = ''; }
   }
 
   destroy() {
@@ -1481,20 +1953,38 @@ export class BattleScene {
   }
 
   // ---- effect builders
-  _burst(x, y, n, { color = '#fff', speed = 500, life = 0.45, size = 2, spread = Math.PI, dir = 0 } = {}) {
+  _burst(x, y, n, { color = '#fff', speed = 500, life = 0.45, size = 2, spread = Math.PI, dir = 0, len } = {}) {
     if (this.reducedMotion) n = Math.ceil(n / 3);
     for (let i = 0; i < n; i++) {
       const a = spread >= Math.PI ? rand(0, Math.PI * 2) : dir + rand(-spread / 2, spread / 2);
       const s = rand(speed * 0.3, speed);
-      this._add({ shape: 'spark', x, y, vx: Math.cos(a) * s, vy: Math.sin(a) * s, drag: 3, g: 400, life: rand(life * 0.6, life), size: rand(size * 0.6, size * 1.3), color, blend: 'lighter', a: 1 });
+      this._add({ shape: 'spark', x, y, vx: Math.cos(a) * s, vy: Math.sin(a) * s, drag: 3, g: 400, life: rand(life * 0.6, life), size: rand(size * 0.6, size * 1.3), color, blend: 'lighter', a: 1, len });
     }
     this._add({ shape: 'glow', x, y, life: 0.25, size: speed * 0.25, size1: speed * 0.32, color, blend: 'lighter', a: 0.9 });
   }
   _ring(x, y, r0, r1, color, flat = 0.35, ms = 500, width = 3) { this._add({ shape: 'ring', x, y, r0, r1, flat, color, width, life: ms / 1000, a: 1, blend: 'lighter' }); }
   _star(x, y, size, color, ms) { this._add({ shape: 'star', x, y, size, color, life: ms / 1000, a: 1, blend: 'lighter', rot: rand(0, 0.8) }); }
-  _slash(x, y, size, ux, color) {
+  _slash(x, y, size, ux, color, delay = 0) {
     const rot = (ux > 0 ? 0 : Math.PI) + rand(-0.5, 0.5);
-    this._add({ shape: 'slash', x, y, size, rot, color, life: 0.26, a: 1, blend: 'lighter' });
+    this._add({ shape: 'slash', x, y, size, rot, color, life: 0.26, a: 1, blend: 'lighter', delay });
+  }
+  // Manga speed lines bursting out of the impact point.
+  _impactLines(x, y, n, r, color) {
+    if (this.reducedMotion) n = Math.ceil(n / 3);
+    for (let i = 0; i < n; i++) {
+      const a = (i / n) * Math.PI * 2 + rand(-0.2, 0.2), sp = rand(r * 3.2, r * 4.6);
+      const r0 = r * rand(0.18, 0.32);
+      this._add({ shape: 'spark', x: x + Math.cos(a) * r0, y: y + Math.sin(a) * r0, vx: Math.cos(a) * sp, vy: Math.sin(a) * sp, drag: 9, life: rand(0.14, 0.22), size: rand(2, 3.6), len: 0.06, color, blend: 'lighter', a: 0.95 });
+    }
+  }
+  // Little bright chips that bounce away from the blow under gravity.
+  _chips(x, y, n, ux, uy) {
+    if (this.reducedMotion) n = Math.ceil(n / 3);
+    const cols = ['#ffffff', '#ffe27a', '#ffb15a'];
+    for (let i = 0; i < n; i++) {
+      const a = Math.atan2(uy, ux) + rand(-0.9, 0.9) - 0.35, s = rand(260, 520);
+      this._add({ shape: 'rect', x, y, vx: Math.cos(a) * s, vy: Math.sin(a) * s - rand(80, 220), g: 1500, drag: 0.8, life: rand(0.45, 0.75), w: rand(3, 5), h: rand(3, 6), rot: rand(0, 6), vr: rand(-14, 14), flip: 0, vf: rand(8, 16), color: cols[i % 3], a: 1, fadeAt: 0.6 });
+    }
   }
   _shield(x, y, size, ux) {
     for (let i = 0; i < 2; i++) this._add({ shape: 'ring', x: x - ux * 6, y, r0: size * 0.6, r1: size * (1.05 + i * 0.25), flat: 1, color: i ? '#ffffff' : '#7fd0ff', width: 6 - i * 3, life: 0.4 + i * 0.1, a: 1, blend: 'lighter' });
