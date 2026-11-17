@@ -15,20 +15,21 @@ import * as A from './board-art.js';
 const S = 1.8;          // grid spacing
 const T = 1.5;          // tile size (gap = S - T)
 const TOP = 0.42;       // tile top height
-const START_R = 1.62;   // start platform top radius
+const START_R = 1.8;    // start platform top radius
 const START_TOP = 0.5;
 const BOSS_R = 1.75;    // boss dais top radius
 const BOSS_TOP = 0.9;
-const HERO_H = 1.75;
-const BOSS_H = 3.9;
-const ENEMY_H = 1.5;
-const HEAD = 2.5;       // hero + flag height used for framing
+const HERO_H = 2.2;
+const BOSS_H = 4.7;
+const ENEMY_H = 1.9;
+const HEAD = 3.0;      // hero + flag height used for framing
 const WALL_H = 4.4;
 const WALL_T = 0.7;
 const DEG = Math.PI / 180;
 const MODES = {
   iso: { az: 45 * DEG, el: 38 * DEG },
   stage: { az: 0, el: 46 * DEG },
+  side: { az: 90 * DEG, el: 44 * DEG },
 };
 
 const loader = new THREE.TextureLoader();
@@ -53,7 +54,8 @@ function basis(mode) {
   const fwdH = new THREE.Vector3(Math.sin(az), 0, Math.cos(az)); // horizontal, toward the camera
   return { mode, az, el, dir, right, up, fwdH };
 }
-const BASES = { iso: basis('iso'), stage: basis('stage') };
+const BASES = { iso: basis('iso'), stage: basis('stage'), side: basis('side') };
+const MODE_LIST = ['iso', 'stage', 'side'];
 
 function roundedRectShape(w, h, r) {
   const s = new THREE.Shape(), x = -w / 2, y = -h / 2;
@@ -96,10 +98,16 @@ export class BoardView {
     this.scene = new THREE.Scene();
     this.camera = new THREE.OrthographicCamera(-10, 10, 10, -10, 0.1, 400);
     this.zoom = 1;
-    this.zoomTo = null;
     this.target = new THREE.Vector3();
-    this.camTarget = new THREE.Vector3();
-    this.follow = true;
+    this.userUntil = 0;
+    this.forced = null;     // focusOn / overview shot
+    this.walk = null;       // hero currently walking (cinematic follow)
+    this.afterWalk = 0;
+    this.turnFocus = null;
+    this.shakeAmp = 0;
+    this.flare = 0;
+    this.puffs = [];
+    this.introToken = 0;
     this.mode = null;
     this.B = BASES.iso;
     this.fit = { k: 40, target: new THREE.Vector3() };
@@ -142,7 +150,9 @@ export class BoardView {
     this.W = w; this.H = h;
     this.renderer.setSize(w, h);
     this.aspect = w / h;
-    const mode = this.aspect < 0.9 ? 'stage' : 'iso';
+    // portrait: straight-on; short wide screens (landscape phones): from the
+    // side so the long axis of the board runs across; otherwise isometric.
+    const mode = this.aspect < 0.9 ? 'stage' : (this.aspect >= 1.7 && h < 600) ? 'side' : 'iso';
     if (mode !== this.mode) {
       this.mode = mode;
       this.B = BASES[mode];
@@ -163,20 +173,27 @@ export class BoardView {
     const vis = (el) => { if (!el) return null; const r = el.getBoundingClientRect(); return r.width > 2 && r.height > 2 && getComputedStyle(el).visibility !== 'hidden' && getComputedStyle(el).display !== 'none' ? r : null; };
     const q = (sel) => document.querySelector(sel);
     const game = q('#game');
-    if (game && game.classList.contains('active') !== false) {
-      let top = 0;
-      for (const sel of ['#topbar', '#players']) { const r = vis(q(sel)); if (r && r.top < H * 0.4) top = Math.max(top, r.bottom - cr.top); }
-      if (top) s.top = top + 6;
-      let bot = H;
-      for (const sel of ['#me', '#ticker']) { const r = vis(q(sel)); if (r && r.top > H * 0.55) bot = Math.min(bot, r.top - cr.top); }
-      if (bot < H) s.bottom = H - bot + 6;
-      const o = vis(q('#others'));
-      if (o && o.height > 10) {
-        if (o.width > W * 0.4) s.top = Math.max(s.top, o.bottom - cr.top + 6);
-        else s.exclude.push({ x0: o.left - cr.left - 4, y0: o.top - cr.top - 4, x1: o.right - cr.left + 8, y1: o.bottom - cr.top + 6 });
+    if (game && vis(game)) {
+      const rel = (r, pad = 6) => ({ x0: r.left - cr.left - pad, y0: r.top - cr.top - pad, x1: r.right - cr.left + pad, y1: r.bottom - cr.top + pad });
+      let top = 0, bot = H;
+      const union = (el) => {
+        if (!el) return null;
+        let r = null;
+        for (const c of el.children) { const b = vis(c); if (!b) continue; r = r ? { left: Math.min(r.left, b.left), top: Math.min(r.top, b.top), right: Math.max(r.right, b.right), bottom: Math.max(r.bottom, b.bottom) } : { left: b.left, top: b.top, right: b.right, bottom: b.bottom }; }
+        if (r) { r.width = r.right - r.left; r.height = r.bottom - r.top; }
+        return r;
+      };
+      for (const sel of ['#topbar', '#players', '#others', '#me', '#ticker']) {
+        const el = q(sel);
+        const r = sel === '#players' || sel === '#others' ? union(el) : vis(el);
+        if (!r) continue;
+        const wide = r.width > W * 0.72;
+        if (wide && r.bottom - cr.top < H * 0.45) top = Math.max(top, r.bottom - cr.top);
+        else if (wide && r.top - cr.top > H * 0.55) bot = Math.min(bot, r.top - cr.top);
+        else s.exclude.push(rel(r));
       }
-      // landscape: the column of other players runs down the left side
-      if (!portrait && o && o.height > 10) s.left = Math.max(s.left, o.right - cr.left + 10);
+      s.top = (top || 0) + 6;
+      s.bottom = H - bot + 6;
     }
     return s;
   }
@@ -194,12 +211,12 @@ export class BoardView {
     const sl = sa.left, sr = W - sa.right, st = sa.top, sb = H - sa.bottom;
     const kMax = Math.min((sr - sl) / (maxU - minU), (sb - st) / (maxV - minV));
     let best = null;
-    for (let k = kMax; k > kMax * 0.55 && !best; k *= 0.975) {
+    for (let k = kMax; k > kMax * 0.4 && !best; k *= 0.965) {
       const uLo = maxU - (sr - W / 2) / k, uHi = minU - (sl - W / 2) / k;
       const vLo = maxV - (H / 2 - st) / k, vHi = minV - (H / 2 - sb) / k;
       if (uLo > uHi + 1e-6 || vLo > vHi + 1e-6) continue;
       const cands = [];
-      const N = 8;
+      const N = 6;
       for (let i = 0; i <= N; i++) for (let j = 0; j <= N; j++) {
         const u0 = uLo + (uHi - uLo) * i / N, v0 = vLo + (vHi - vLo) * j / N;
         cands.push([u0, v0, Math.hypot(i / N - 0.5, j / N - 0.5)]);
@@ -217,13 +234,11 @@ export class BoardView {
         if (ok) { best = { k, u0, v0 }; break; }
       }
     }
-    if (!best) best = { k: kMax * 0.55, u0: (minU + maxU) / 2, v0: (minV + maxV) / 2 };
+    if (!best) best = { k: kMax * 0.4, u0: (minU + maxU) / 2, v0: (minV + maxV) / 2 };
     const t = B.right.clone().multiplyScalar(best.u0).addScaledVector(B.up, best.v0);
     t.addScaledVector(B.dir, (0.5 - t.y) / B.dir.y);
     this.fit = { k: best.k, target: t, box: { minU, maxU, minV, maxV } };
-    if (snap) { this.kCur = best.k; }
-    if (this.follow || snap) this.camTarget.copy(t);
-    if (snap) this.target.copy(t);
+    if (snap) { this.kCur = best.k; this.target.copy(t); }
   }
 
   updateCamera() {
@@ -249,7 +264,7 @@ export class BoardView {
       if (pinch && pts.size === 2) {
         const [a, b] = [...pts.values()];
         this.zoom = THREE.MathUtils.clamp(pinch.z * Math.hypot(a.x - b.x, a.y - b.y) / pinch.d, 0.6, 3.2);
-        this.zoomTo = null;
+        this.userHold();
         this.updateCamera();
         return;
       }
@@ -258,10 +273,10 @@ export class BoardView {
       moved += Math.abs(dx) + Math.abs(dy);
       drag = { x: e.clientX, y: e.clientY };
       if (moved > 14) {
-        this.follow = false;
+        this.userHold();
         const k = this.kCur * this.zoom;
-        this.camTarget.addScaledVector(this.B.right, -dx / k).addScaledVector(this.B.up, dy / k);
-        this.clampTarget();
+        this.target.addScaledVector(this.B.right, -dx / k).addScaledVector(this.B.up, dy / k);
+        this.clampTarget(this.target);
       }
     });
     const end = (e) => {
@@ -278,19 +293,21 @@ export class BoardView {
     el.addEventListener('wheel', (e) => {
       e.preventDefault();
       this.zoom = THREE.MathUtils.clamp(this.zoom * (e.deltaY < 0 ? 1.1 : 0.9), 0.6, 3.2);
-      this.zoomTo = null;
-      if (this.zoom <= 1.02) this.follow = true;
+      this.userHold();
       this.updateCamera();
     }, { passive: false });
   }
 
-  clampTarget() {
-    if (!this.fit.box) return;
+  // Manual pinch/drag/wheel pauses the auto camera for a few seconds.
+  userHold(ms = 6000) { this.userUntil = performance.now() + ms; }
+
+  clampTarget(v) {
+    if (!this.fit.box) return v;
     const B = this.B, f = this.fit.target, b = this.fit.box;
-    const d = this.camTarget.clone().sub(f);
+    const d = v.clone().sub(f);
     const du = THREE.MathUtils.clamp(d.dot(B.right), -(b.maxU - b.minU) / 2, (b.maxU - b.minU) / 2);
     const dv = THREE.MathUtils.clamp(d.dot(B.up), -(b.maxV - b.minV) / 2, (b.maxV - b.minV) / 2);
-    this.camTarget.copy(f).addScaledVector(B.right, du).addScaledVector(B.up, dv);
+    return v.copy(f).addScaledVector(B.right, du).addScaledVector(B.up, dv);
   }
 
   pick(e) {
@@ -361,21 +378,21 @@ export class BoardView {
     // platforms and the boss sprite.
     this.fitPts = {};
     this.spriteHull = {};
-    for (const mode of ['iso', 'stage']) {
+    for (const mode of MODE_LIST) {
       const B = BASES[mode], pts = [], hull = [];
       const head = (p, w, h) => { const a = p.clone().addScaledVector(B.up, h); hull.push(a.clone().addScaledVector(B.right, w / 2), a.clone().addScaledVector(B.right, -w / 2), p.clone().addScaledVector(B.right, w / 2), p.clone().addScaledVector(B.right, -w / 2)); };
       this.disp.forEach((d, i) => {
         const top = this.tileTop(i);
         if (this.isPlatform(i)) {
-          const r = i === 0 ? START_R + 0.35 : BOSS_R + 0.55;
+          const r = i === 0 ? START_R + 0.7 : BOSS_R + 0.65;
           for (let a = 0; a < 16; a++) pts.push(new THREE.Vector3(d.x + Math.cos(a / 16 * Math.PI * 2) * r, a % 2 ? 0 : top, d.z + Math.sin(a / 16 * Math.PI * 2) * r));
           const front = new THREE.Vector3(d.x, top, d.z).addScaledVector(B.fwdH, i === 0 ? 0 : 0.5);
-          for (const s of [-1, 0, 1]) head(front.clone().addScaledVector(B.right, s * (i === 0 ? 0.9 : 0.7)), 1.3, HEAD);
+          for (const s of [-1, 0, 1]) head(front.clone().addScaledVector(B.right, s * (i === 0 ? 1.0 : 0.8)), 1.8, HEAD);
           if (i !== 0) head(new THREE.Vector3(d.x, top, d.z).addScaledVector(B.fwdH, -0.85), BOSS_H * 0.98, BOSS_H + 0.1);
         } else {
           for (const [sx, sz] of [[-1, -1], [1, -1], [1, 1], [-1, 1]]) pts.push(new THREE.Vector3(d.x + sx * T / 2, top, d.z + sz * T / 2));
           pts.push(new THREE.Vector3(d.x, 0, d.z).addScaledVector(B.fwdH, T * 0.72));
-          head(new THREE.Vector3(d.x, top, d.z), 1.3, HEAD);
+          head(new THREE.Vector3(d.x, top, d.z), 1.8, HEAD);
         }
       });
       this.fitPts[mode] = pts.concat(hull);
@@ -445,10 +462,12 @@ export class BoardView {
 
     this.syncPlayers(game, true);
     this.syncLoot(game);
-    this.follow = true;
+    this.introToken++;
+    this.intro = false;
+    this.puffs = [];
+    this.walk = null; this.afterWalk = 0; this.turnFocus = null; this.forced = null; this.userUntil = 0;
     this.computeFit(true);
-    this.zoom = 0.8;
-    this.zoomTo = 1;
+    this.zoom = 0.85;
     this.updateCamera();
   }
 
@@ -473,7 +492,7 @@ export class BoardView {
     const bb = this.bbox, R = this.R;
     // Walls are placed past every sprite's extent in both framings (+ torches).
     let minX = bb.min.x - 2.3, minZ = bb.min.z - 2.3;
-    for (const mode of ['iso', 'stage']) for (const p of this.spriteHull[mode]) { minX = Math.min(minX, p.x - 0.75); minZ = Math.min(minZ, p.z - 0.75); }
+    for (const mode of MODE_LIST) for (const p of this.spriteHull[mode]) { minX = Math.min(minX, p.x - 0.75); minZ = Math.min(minZ, p.z - 0.75); }
     this.room = { wx: minX, wz: minZ, ex: bb.max.x + 2.3, fz: bb.max.z + 1.9, fx: bb.max.x + 1.9 };
     const room = this.room;
 
@@ -495,6 +514,7 @@ export class BoardView {
     this.floors = {
       iso: floorMesh(room.wx - WALL_T, room.wx + 90, room.wz - WALL_T, room.wz + 90),
       stage: floorMesh(-90, 90, room.wz - WALL_T, room.wz + 90),
+      side: floorMesh(room.wx - WALL_T, room.wx + 90, -90, 90),
     };
 
 
@@ -513,6 +533,7 @@ export class BoardView {
     this.walls.north = this.buildWall(pal, room.wx - WALL_T, room.ex + far, room.wz, 'z');
     this.walls.west = this.buildWall(pal, room.wz - WALL_T, room.fz + far, room.wx, 'x');
     this.walls.northExt = this.buildWall(pal, room.wx - far, room.wx - WALL_T, room.wz, 'z');
+    this.walls.westExt = this.buildWall(pal, room.wz - far, room.wz - WALL_T, room.wx, 'x');
     // low boulder edge on the open front sides
     this.edges = { south: new THREE.Group(), east: new THREE.Group(), southExt: new THREE.Group() };
     for (const [key, a0, a1, fixed, axis] of [['south', room.wx, room.ex + far, room.fz, 'z'], ['east', room.wz, room.fz + far, room.fx, 'x'], ['southExt', room.wx - far, room.wx, room.fz, 'z']]) {
@@ -688,7 +709,9 @@ export class BoardView {
       const pr = A.brazierProp(pal), grp = new THREE.Group(), bb = new A.Batcher();
       pr.addTo(bb, new THREE.Matrix4());
       this.addBatch(bb, grp);
+      const nf = this.flames.length;
       this.addFlames(pr, new THREE.Matrix4(), grp);
+      for (let q = nf; q < this.flames.length; q++) this.flames[q].boss = true;
       const light = new THREE.PointLight(new THREE.Color(pal.bossFlame[1]), 6, 7, 1.6);
       light.position.set(0, 1.9, 0);
       grp.add(light);
@@ -702,7 +725,7 @@ export class BoardView {
   clearOf(box) {
     const corners = [];
     for (const x of [box.min.x, box.max.x]) for (const y of [box.min.y, box.max.y]) for (const z of [box.min.z, box.max.z]) corners.push(new THREE.Vector3(x, y, z));
-    for (const mode of ['iso', 'stage']) {
+    for (const mode of MODE_LIST) {
       const B = BASES[mode];
       let u0 = Infinity, u1 = -Infinity, v0 = Infinity, v1 = -Infinity, dmax = -Infinity;
       for (const c of corners) { const u = c.dot(B.right), v = c.dot(B.up), d = c.dot(B.dir); u0 = Math.min(u0, u); u1 = Math.max(u1, u); v0 = Math.min(v0, v); v1 = Math.max(v1, v); dmax = Math.max(dmax, d); }
@@ -715,7 +738,7 @@ export class BoardView {
   }
   buildOcc() {
     this.occ = {};
-    for (const mode of ['iso', 'stage']) {
+    for (const mode of MODE_LIST) {
       const B = BASES[mode], list = [];
       this.disp.forEach((d, i) => {
         const plat = this.isPlatform(i), r = plat ? (i === 0 ? START_R + 0.4 : BOSS_R + 0.6) : T * 0.75;
@@ -893,13 +916,15 @@ export class BoardView {
   // Everything that depends on the camera framing.
   applyMode() {
     if (!this.board) return;
-    const B = this.B, stage = this.mode === 'stage';
-    this.floors.iso.visible = !stage;
-    this.floors.stage.visible = stage;
-    // stage view: one long back wall, no side walls (they'd be edge-on)
+    const B = this.B, m = this.mode, stage = m === 'stage', side = m === 'side';
+    for (const k of MODE_LIST) this.floors[k].visible = k === m;
+    // stage / side views: one long back wall, no edge-on side walls
+    this.walls.north.visible = !side;
     this.walls.west.visible = !stage;
     this.walls.northExt.visible = stage;
+    this.walls.westExt.visible = side;
     this.edges.east.visible = !stage;
+    this.edges.south.visible = !side;
     this.edges.southExt.visible = stage;
     // stickers + START label oriented to read upright on screen
     if (this.stickerMesh) { this.world.remove(this.stickerMesh); this.stickerMesh.geometry.dispose(); }
@@ -1004,7 +1029,7 @@ export class BoardView {
     const sprite = this.makeSprite(art(heroDef(p.hero).art), HERO_H);
     sprite.renderOrder = 3;
     grp.add(sprite);
-    const shadow = this.makeShadow(0.46);
+    const shadow = this.makeShadow(0.56);
     shadow.scale.set(1, 0.75, 1);
     shadow.position.y = 0.015;
     grp.add(shadow);
@@ -1017,7 +1042,7 @@ export class BoardView {
     const flag = new THREE.Sprite(new THREE.SpriteMaterial({ transparent: true, depthWrite: false }));
     flag.center.set(0.5, 0);
     flag.position.y = HERO_H + 0.02;
-    flag.scale.set(0.4, 0.6, 1);
+    flag.scale.set(0.48, 0.72, 1);
     flag.visible = false;
     flag.renderOrder = 4;
     grp.add(flag);
@@ -1032,13 +1057,13 @@ export class BoardView {
     if (count <= 1) return base;
     if (i === 0) {
       // one row facing the camera for up to 3, two staggered rows beyond that
-      if (count <= 3) return base.addScaledVector(B.right, (k - (count - 1) / 2) * 0.78).addScaledVector(B.fwdH, (k % 2) * 0.25 - 0.1);
+      if (count <= 3) return base.addScaledVector(B.right, (k - (count - 1) / 2) * 0.95).addScaledVector(B.fwdH, (k % 2) * 0.25 - 0.1);
       const back = Math.ceil(count / 2), inBack = k < back, n = inBack ? back : count - back, j = inBack ? k : k - back;
-      const along = (j - (n - 1) / 2) * 0.78;
+      const along = (j - (n - 1) / 2) * 0.95;
       return base.addScaledVector(B.right, along + (inBack ? 0 : 0.36)).addScaledVector(B.fwdH, inBack ? -0.45 : 0.45);
     }
     if (i === this.board.bossIdx) {
-      const along = (k - (count - 1) / 2) * (count > 3 ? 0.5 : 0.62);
+      const along = (k - (count - 1) / 2) * (count > 3 ? 0.6 : 0.75);
       return base.addScaledVector(B.right, along).addScaledVector(B.fwdH, (k % 2) * 0.32 - 0.1);
     }
     const ang = (k / count) * Math.PI * 2 + Math.PI / 4;
@@ -1084,35 +1109,149 @@ export class BoardView {
         if (petCard) {
           const base = { pet_golem: 'golem', pet_tezuki: 'kitsune', pet_kezz: 'goblin' }[petCard.id];
           const form = game.petForms[petCard.uid] || 1;
-          tok.pet = this.makeSprite(art(`${base}_${form}`), 0.42 + form * 0.13);
+          tok.pet = this.makeSprite(art(`${base}_${form}`), 0.55 + form * 0.16);
           tok.pet.renderOrder = 3;
           tok.group.add(tok.pet);
         }
         tok.petKey = key;
       }
-      if (tok.pet) tok.pet.position.copy(this.B.right.clone().multiplyScalar(0.42).addScaledVector(this.B.fwdH, 0.16));
+      if (tok.pet) tok.pet.position.copy(this.B.right.clone().multiplyScalar(0.55).addScaledVector(this.B.fwdH, 0.18));
     }
   }
 
   setActive(id) {
     this.activeId = id;
-    if (this.game && this.game.players[id]) this.follow = true;
+    if (this.game && this.game.players[id]) this.turnFocus = { id, until: performance.now() + 1500 };
   }
 
+  // ------------------------------------------------------------ director
+  // Zoom levels for cinematic shots (portrait phones get closer shots).
+  shotZoom(kind) {
+    const portrait = this.mode !== 'iso';
+    return { walk: portrait ? 1.5 : 1.3, turn: portrait ? 1.25 : 1.12, focus: portrait ? 1.7 : 1.45, boss: portrait ? 1.9 : 1.6 }[kind] || 1;
+  }
+  // World point to look at for a player id or { tile: i } / { player: id }.
+  focusPoint(what) {
+    if (what && typeof what === 'object') {
+      if (what.tile != null) return this.disp?.[what.tile] ? this.tilePos(what.tile).add(new THREE.Vector3(0, HERO_H * 0.45, 0)) : null;
+      if (what.player != null) what = what.player;
+      else if (what.isVector3) return what.clone();
+    }
+    const tok = this.tokens.get(what);
+    if (!tok || !tok.group.visible) return null;
+    return tok.group.position.clone().add(new THREE.Vector3(0, HERO_H * 0.5, 0));
+  }
+  // Ease the camera onto a hero (player id) or a tile ({ tile: i }) and hold
+  // it there for `ms`, then the auto camera takes over again.
+  focusOn(what, { zoom = null, ms = 2200 } = {}) {
+    const p = this.focusPoint(what);
+    if (!p) return Promise.resolve();
+    this.forced = { p, zoom: zoom ?? this.shotZoom('focus'), until: performance.now() + ms };
+    this.userUntil = 0;
+    return new Promise((r) => setTimeout(r, Math.min(ms, 650)));
+  }
+  // Ease back to the whole-board framing (held for `ms`).
+  overview(ms = 1200) {
+    this.forced = { overview: true, until: performance.now() + ms };
+    this.userUntil = 0;
+    return new Promise((r) => setTimeout(r, Math.min(ms, 650)));
+  }
   focusTile(i, snap = false) {
     if (!this.board) return;
-    this.follow = false;
-    this.camTarget.copy(this.followTarget(this.tilePos(i)));
-    if (snap) this.target.copy(this.camTarget);
+    this.focusOn({ tile: i }, { ms: 2500 });
+    if (snap) { this.target.copy(this.followTarget(this.focusPoint({ tile: i }), this.forced.zoom)); this.zoom = this.forced.zoom; }
   }
+  // Camera shake (strength ~0.2 small hit, 1 huge).
+  shake(strength = 0.5) { this.shakeAmp = Math.max(this.shakeAmp, strength * 0.32); }
 
   // Camera target that puts world point p at the centre of the safe area.
-  followTarget(p) {
+  followTarget(p, zoom = this.zoom) {
     const sa = this._lastSafe || this.safeArea();
     this._lastSafe = sa;
-    const k = this.kCur * this.zoom;
+    const k = this.kCur * zoom;
     const cx = (sa.left + this.W - sa.right) / 2, cy = (sa.top + this.H - sa.bottom) / 2;
-    return p.clone().addScaledVector(this.B.right, -(cx - this.W / 2) / k).addScaledVector(this.B.up, (cy - this.H / 2) / k);
+    return this.clampTarget(p.clone().addScaledVector(this.B.right, -(cx - this.W / 2) / k).addScaledVector(this.B.up, (cy - this.H / 2) / k));
+  }
+
+  // What the auto camera wants this frame: [target, zoom].
+  direct(now) {
+    const over = [this.fit.target, 1];
+    const f = this.forced;
+    if (f && now < f.until) return f.overview ? over : [this.followTarget(f.p, f.zoom), f.zoom];
+    if (this.highlights.length) return over;
+    if (this.walk) {
+      const tok = this.tokens.get(this.walk.id);
+      if (tok) {
+        const z = this.shotZoom('walk');
+        const mid = tok.group.position.clone().lerp(this.walk.dest, 0.5);
+        mid.y = this.walk.dest.y + HERO_H * 0.45;
+        return [this.followTarget(mid, z), z];
+      }
+    }
+    if (this.afterWalk && now < this.afterWalk.until) {
+      const p = this.focusPoint(this.afterWalk.id);
+      if (p) { const z = this.shotZoom('walk'); return [this.followTarget(p, z), z]; }
+    }
+    if (this.turnFocus && now < this.turnFocus.until) {
+      const p = this.focusPoint(this.turnFocus.id);
+      if (p) { const z = this.shotZoom('turn'); return [this.followTarget(p, z), z]; }
+    }
+    return over;
+  }
+
+  // Establishing shot: boss roars on the dais, then the camera sweeps down
+  // the path to the Start platform and eases out to the whole board.
+  async introSweep(speed = 1) {
+    if (!this.board || speed < 0.05) return;
+    const token = ++this.introToken;
+    const live = () => token === this.introToken && this.board;
+    const s = THREE.MathUtils.clamp(speed, 0.5, 1.2);
+    const n = this.board.bossIdx;
+    const bossP = this.bossSprite.position.clone().add(new THREE.Vector3(0, BOSS_H * 0.42, 0));
+    const startP = this.tilePos(0).add(new THREE.Vector3(0, HERO_H * 0.5, 0));
+    const zB = this.shotZoom('boss'), zS = this.shotZoom('walk');
+    this.intro = true;
+    this.target.copy(this.followTarget(bossP, zB));
+    this.zoom = zB;
+    await this.sleep(260 * s);
+    if (!live()) return;
+    this.roar();
+    await this.sleep(1000 * s);
+    if (!live()) return;
+    // sweep along the path (smoothed), boss -> start
+    const pts = [];
+    for (let i = n; i >= 0; i -= 3) pts.push(this.tilePos(i));
+    pts[0] = bossP; pts.push(startP);
+    const curve = new THREE.CatmullRomCurve3(pts.map((p, i) => (i === 0 || i === pts.length - 1 ? p : p.clone().lerp(bossP.clone().lerp(startP, i / pts.length), 0.6))));
+    const ease = (k) => (k < 0.5 ? 4 * k * k * k : 1 - Math.pow(-2 * k + 2, 3) / 2);
+    await this.tween(2100 * s, (k) => {
+      if (!live()) return;
+      const e = ease(k), z = zB + (zS - zB) * e;
+      this.zoom = z;
+      this.target.copy(this.followTarget(curve.getPoint(e), z));
+    });
+    if (!live()) return;
+    await this.sleep(350 * s);
+    if (!live()) return;
+    const t0 = this.target.clone(), z0 = this.zoom;
+    await this.tween(800 * s, (k) => {
+      if (!live()) return;
+      const e = ease(k);
+      this.zoom = z0 + (1 - z0) * e;
+      this.target.lerpVectors(t0, this.fit.target, e);
+    });
+    if (live()) this.intro = false;
+  }
+  sleep(ms) { return new Promise((r) => setTimeout(r, ms)); }
+  // Boss roar: shake + pop, braziers flare, dust ring on the dais, camera rumble.
+  roar() {
+    if (!this.bossSprite) return;
+    this.bossSprite.userData.roar = 1;
+    this.bossSprite.userData.shake = 1;
+    this.flare = 1;
+    this.shake(0.8);
+    const d = this.disp[this.board.bossIdx];
+    this.dust(new THREE.Vector3(d.x, BOSS_TOP, d.z), 16, BOSS_R + 0.3, 1.4);
   }
 
   async movePlayer(id, from, to, how, speed = 1) {
@@ -1124,18 +1263,30 @@ export class BoardView {
       const step = to > from ? 1 : -1;
       for (let i = from + step; step > 0 ? i <= to : i >= to; i += step) path.push(i);
     } else path.push(to);
+    const cine = speed >= 0.2;
+    if (cine) this.walk = { id, dest: this.tilePos(to) };
     for (const i of path) {
       const a = tok.group.position.clone();
       const b = this.tilePos(i);
       const dur = speed < 0.05 ? 0 : (how === 'walk' ? 260 : 620) * Math.max(0.15, speed);
       await this.tween(dur, (k) => {
         tok.group.position.lerpVectors(a, b, k);
-        tok.group.position.y += Math.sin(k * Math.PI) * (how === 'walk' ? 0.5 : 2.4);
+        tok.group.position.y += Math.sin(k * Math.PI) * (how === 'walk' ? 0.55 : 2.6);
         tok.squash = k > 0.85 ? (1 - k) * 4 : 0;
       });
       tok.land = 1;
+      if (speed >= 0.05) this.dust(b, how === 'walk' ? 6 : 12, 0.35, how === 'walk' ? 0.6 : 1.1);
+      if (how !== 'walk' && speed >= 0.05) this.shake(0.25);
     }
     tok.moving = false;
+    if (this.walk && this.walk.id === id) {
+      this.walk = null;
+      this.afterWalk = { id, until: performance.now() + 900 * Math.max(0.5, speed) + 300 };
+    }
+    // colour-coded glow when landing on an event tile
+    const type = this.board.tiles[to]?.type;
+    const pulse = { [TILE.MONSTER]: 0xff3a52, [TILE.TREASURE]: 0xffc42a, [TILE.TRAP]: 0xa05aff }[type];
+    if (pulse && speed >= 0.05) this.tilePulse(to, pulse);
     this.syncPlayers(this.game);
   }
 
@@ -1177,11 +1328,25 @@ export class BoardView {
   }
   hitEnemy() {
     const s = this.enemy || this.bossSprite;
-    if (s) s.userData.shake = 1;
+    if (!s) return;
+    s.userData.shake = 1;
+    const chest = s.position.clone().add(new THREE.Vector3(0, s.userData.h * 0.45, 0)).addScaledVector(this.B.dir, 0.4);
+    if (!this.enemy) {
+      // boss on the dais: recoil, red flash, sparks, dust and a rumble
+      s.userData.hit = 1;
+      this.flare = Math.max(this.flare, 0.45);
+      this.burstAt(chest, 0xffe066, 36, 1.3);
+      const d = this.disp[this.board.bossIdx];
+      this.dust(new THREE.Vector3(d.x, BOSS_TOP, d.z).addScaledVector(this.B.fwdH, -0.6), 7, 0.9, 1.1);
+      this.shake(0.35);
+    } else {
+      this.burstAt(chest, 0xffe066, 18, 0.7);
+      this.shake(0.15);
+    }
   }
 
-  burst(i, color = 0xffaa33, n = 40, spread = 1) {
-    const p = this.tilePos(i);
+  burst(i, color = 0xffaa33, n = 40, spread = 1) { return this.burstAt(this.tilePos(i), color, n, spread); }
+  burstAt(p, color = 0xffaa33, n = 40, spread = 1) {
     const g = new THREE.BufferGeometry();
     const pos = new Float32Array(n * 3), vel = [];
     for (let k = 0; k < n; k++) {
@@ -1210,12 +1375,13 @@ export class BoardView {
 
   fx(kind, at) {
     if (!this.board || at == null) return;
-    if (kind === 'bomb') this.burst(at, 0xff8833, 60, 1.2);
-    if (kind === 'yessi') this.burst(at, 0xff66dd, 70, 2);
-    if (kind === 'slide') this.burst(at, 0xd0b080, 80, 2.5);
-    if (kind === 'trap') this.burst(at, 0xb07aff, 34, 0.7);
-    if (kind === 'loot') this.burst(at, 0xffe066, 34, 0.7);
-    if (kind === 'relic') this.burst(at, 0xffffff, 120, 2);
+    const p = this.tilePos(at);
+    if (kind === 'bomb') { this.burst(at, 0xff8833, 60, 1.2); this.dust(p, 10, 0.5, 1.2); this.shake(0.6); }
+    if (kind === 'yessi') { this.burst(at, 0xff66dd, 70, 2); this.dust(p, 12, 0.8, 1.3); this.shake(0.7); }
+    if (kind === 'slide') { this.burst(at, 0xd0b080, 80, 2.5); this.dust(p, 14, 1, 1.5); this.shake(0.5); }
+    if (kind === 'trap') { this.burst(at, 0xb07aff, 34, 0.7); this.shake(0.2); }
+    if (kind === 'loot') { this.burst(at, 0xffe066, 26, 0.6); this.coins(p, 12); }
+    if (kind === 'relic') { this.burst(at, 0xffffff, 120, 2); this.coins(p, 20); this.flare = 1; this.shake(0.5); }
   }
 
   syncLoot(game) {
@@ -1300,31 +1466,32 @@ export class BoardView {
       }
     }
     if (Math.abs(this.kCur - this.fit.k) > 1e-3) this.kCur += (this.fit.k - this.kCur) * Math.min(1, dt * 4);
-    if (this.zoomTo != null) {
-      this.zoom += (this.zoomTo - this.zoom) * Math.min(1, dt * 3);
-      if (Math.abs(this.zoom - this.zoomTo) < 0.002) { this.zoom = this.zoomTo; this.zoomTo = null; }
+    // Auto camera (eased): cinematic follow while heroes walk, overview when
+    // idle or choosing. Paused while the user pinches/drags, and during intro.
+    const nowMs = performance.now();
+    if (!this.intro && nowMs > this.userUntil) {
+      const [tw, zw] = this.direct(nowMs);
+      const a = 1 - Math.exp(-dt * 2.4), b = 1 - Math.exp(-dt * 3.2);
+      this.zoom += (zw - this.zoom) * a;
+      this.target.lerp(tw, b);
     }
-    // Camera: framed board at zoom 1, follows the active hero when zoomed in.
-    if (this.follow) {
-      const tok = this.activeId != null ? this.tokens.get(this.activeId) : null;
-      if (this.zoom > 1.04 && tok && tok.group.visible) {
-        const w = THREE.MathUtils.clamp((this.zoom - 1) * 1.5, 0, 1);
-        const want = this.fit.target.clone().lerp(this.followTarget(tok.group.position), w);
-        this.camTarget.lerp(want, 0.06);
-        this.clampTarget();
-      } else this.camTarget.lerp(this.fit.target, 0.08);
-    }
-    this.target.lerp(this.camTarget, 1 - Math.pow(0.002, dt));
     this.updateCamera();
     this.camera.position.copy(this.target).addScaledVector(this.B.dir, 60);
-    this.camera.lookAt(this.target);
+    if (this.shakeAmp > 0.002) {
+      const amp = this.shakeAmp / Math.max(0.8, this.zoom);
+      this.camera.position.addScaledVector(this.B.right, Math.sin(t * 61) * amp + Math.sin(t * 37) * amp * 0.5).addScaledVector(this.B.up, Math.cos(t * 53) * amp * 0.8);
+      this.shakeAmp *= Math.exp(-dt * 6);
+    } else this.shakeAmp = 0;
+    this.camera.lookAt(this.camera.position.clone().addScaledVector(this.B.dir, -60));
 
+    if (this.flare > 0) this.flare = Math.max(0, this.flare - dt * 1.1);
     for (const f of this.flames) {
       const s = 0.9 + Math.sin(t * 11 + f.seed) * 0.07 + Math.sin(t * 27 + f.seed * 2) * 0.05;
-      f.fl.scale.set(f.size * 0.75 * (2 - s), f.size * 1.12 * s, 1);
+      const fl = f.boss ? 1 + this.flare * 1.4 : 1;
+      f.fl.scale.set(f.size * 0.75 * (2 - s) * fl, f.size * 1.12 * s * fl, 1);
       f.glow.material.opacity = 0.42 + s * 0.15;
     }
-    for (const br of this.braziers || []) br.light.intensity = 5.5 + Math.sin(t * 9 + br.seed) * 0.8 + Math.sin(t * 23 + br.seed) * 0.4;
+    for (const br of this.braziers || []) br.light.intensity = 5.5 + this.flare * 12 + Math.sin(t * 9 + br.seed) * 0.8 + Math.sin(t * 23 + br.seed) * 0.4;
     for (const sp of this.spinners) sp.o.rotation.z += sp.v * dt;
     for (const fl of this.floaters) { fl.o.position.y = fl.y + Math.sin(t * 1.5 + fl.seed) * 0.18; fl.o.rotation.y += dt * 0.8; }
     for (const lq of this.liquids) {
@@ -1368,14 +1535,20 @@ export class BoardView {
       if (isActive) tok.active.scale.setScalar(1 + Math.sin(t * 5) * 0.06);
     }
     if (this.bossSprite) {
-      const b = this.bossSprite, h = b.userData.h, w = b.userData.baseW || b.scale.x;
+      const b = this.bossSprite, u = b.userData, h = u.h, w = u.baseW || b.scale.x;
       const breathe = 1 + Math.sin(t * 2) * 0.015;
-      b.scale.set(w * (2 - breathe), h * breathe, 1);
-      const shake = b.userData.shake > 0 ? Math.sin(t * 50) * 0.12 * b.userData.shake : 0;
-      b.position.x = (b.userData.baseX ?? b.position.x) + shake * this.B.right.x;
-      b.position.z = (b.userData.baseZ ?? b.position.z) + shake * this.B.right.z;
-      if (b.userData.shake > 0) { b.userData.shake -= dt * 2.5; b.material.color.setRGB(1, 1 - b.userData.shake * 0.5, 1 - b.userData.shake * 0.5); }
-      else b.material.color.setRGB(1, 1, 1);
+      if (u.roar > 0) u.roar = Math.max(0, u.roar - dt * 1.1);
+      if (u.hit > 0) u.hit = Math.max(0, u.hit - dt * 2.2);
+      const pop = 1 + Math.sin((u.roar || 0) * Math.PI) * 0.1;
+      const squash = (u.hit || 0) * 0.09;
+      b.scale.set(w * (2 - breathe) * pop * (1 + squash * 0.6), h * breathe * pop * (1 - squash), 1);
+      b.material.rotation = (u.hit || 0) * Math.sin((u.hit || 0) * 9) * 0.07;
+      const shake = u.shake > 0 ? Math.sin(t * 50) * 0.14 * u.shake : 0;
+      b.position.x = (u.baseX ?? b.position.x) + shake * this.B.right.x;
+      b.position.z = (u.baseZ ?? b.position.z) + shake * this.B.right.z;
+      if (u.shake > 0) u.shake -= dt * 2.5;
+      const red = Math.max(u.hit || 0, Math.max(0, u.shake || 0) * 0.6);
+      b.material.color.setRGB(1, 1 - red * 0.55, 1 - red * 0.55);
     }
     if (this.enemy) {
       const e = this.enemy;
@@ -1389,6 +1562,64 @@ export class BoardView {
       h.fill.material.opacity = 0.15 + k * 0.2;
       h.marker.position.y = h.marker.userData.baseY + Math.abs(Math.sin(t * 4 + h.seed)) * 0.28;
     }
+    if (this.puffs.length) {
+      this.puffs = this.puffs.filter((p) => {
+        p.life += dt / p.dur;
+        if (p.life >= 1) { this.world.remove(p.s); p.s.material.dispose(); return false; }
+        p.s.position.addScaledVector(p.v, dt);
+        if (p.g) p.v.y -= p.g * dt;
+        else p.v.multiplyScalar(Math.exp(-dt * 3));
+        const sc = p.s0 + (p.s1 - p.s0) * (1 - Math.pow(1 - p.life, 2));
+        p.s.scale.set(sc, sc, 1);
+        p.s.material.opacity = p.g ? Math.min(1, (1 - p.life) * 3) : (1 - p.life) * p.a;
+        if (p.spin) p.s.material.rotation += p.spin * dt;
+        return true;
+      });
+    }
     this.renderer.render(this.scene, this.camera);
+  }
+
+  // ------------------------------------------------------------ juice
+  // Puff of cartoon dust at p (on the ground), n puffs in a ring of radius r.
+  dust(p, n = 6, r = 0.35, size = 0.7) {
+    const tint = new THREE.Color(this.pal?.floor || '#ffffff').lerp(new THREE.Color(0xffffff), 0.65);
+    for (let i = 0; i < n; i++) {
+      const a = (i / n) * Math.PI * 2 + Math.random() * 0.5;
+      const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: A.puffTex(), color: tint, transparent: true, depthWrite: false }));
+      s.position.set(p.x + Math.cos(a) * r, p.y + 0.12, p.z + Math.sin(a) * r);
+      s.renderOrder = 5;
+      this.world.add(s);
+      const sp = 1.2 + Math.random() * 0.8;
+      this.puffs.push({ s, life: 0, dur: 0.55 + Math.random() * 0.25, v: new THREE.Vector3(Math.cos(a) * sp, 0.5 + Math.random() * 0.4, Math.sin(a) * sp), s0: size * 0.35, s1: size * (0.8 + Math.random() * 0.4), a: 0.95 });
+    }
+  }
+  coins(p, n = 12) {
+    for (let i = 0; i < n; i++) {
+      const a = Math.random() * Math.PI * 2, sp = 0.6 + Math.random() * 1.2;
+      const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: A.coinTex(), transparent: true, depthWrite: false }));
+      s.position.set(p.x, p.y + 0.6, p.z);
+      s.renderOrder = 6;
+      this.world.add(s);
+      this.puffs.push({ s, life: 0, dur: 0.9 + Math.random() * 0.3, v: new THREE.Vector3(Math.cos(a) * sp, 4 + Math.random() * 2.2, Math.sin(a) * sp), g: 11, s0: 0.3, s1: 0.3, spin: (Math.random() - 0.5) * 14 });
+    }
+  }
+  // Colour-coded glow pulse on a tile (monster red / treasure gold / trap violet).
+  tilePulse(i, color) {
+    const p = this.tilePos(i), plat = this.isPlatform(i);
+    const geo = plat ? new THREE.CircleGeometry(i === 0 ? START_R : BOSS_R, 40) : new THREE.ShapeGeometry(roundedRectShape(T - 0.06, T - 0.06, 0.3), 6);
+    const m = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({ color, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending }));
+    m.rotation.x = -Math.PI / 2; m.position.set(p.x, p.y + 0.025, p.z); m.renderOrder = 2;
+    const ringGeo = plat ? new THREE.RingGeometry(1, 1.12, 48) : (() => { const sh = roundedRectShape(T + 0.1, T + 0.1, 0.36); sh.holes.push(roundedRectShape(T - 0.04, T - 0.04, 0.3)); return new THREE.ShapeGeometry(sh, 6); })();
+    const ring = new THREE.Mesh(ringGeo, new THREE.MeshBasicMaterial({ color, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, side: THREE.DoubleSide }));
+    ring.rotation.x = -Math.PI / 2; ring.position.copy(m.position); ring.renderOrder = 2;
+    if (plat) ring.scale.setScalar(i === 0 ? START_R : BOSS_R);
+    this.world.add(m, ring);
+    const r0 = ring.scale.x;
+    this.tween(1100, (k) => {
+      const pulse = Math.sin(Math.min(1, k * 1.6) * Math.PI);
+      m.material.opacity = 0.75 * pulse + 0.25 * (1 - k) * (k > 0.6 ? 1 : 0);
+      ring.material.opacity = 1 - k;
+      ring.scale.setScalar(r0 * (1 + k * 0.35));
+    }).then(() => { this.world.remove(m, ring); geo.dispose(); ringGeo.dispose(); m.material.dispose(); ring.material.dispose(); });
   }
 }
