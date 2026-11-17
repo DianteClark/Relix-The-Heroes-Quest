@@ -863,3 +863,31 @@ export function torchProp(pal) {
   pr.flame(0, 0.27, 0.32, 0.5);
   return pr;
 }
+
+// Cartoon dust puff (soft cloud with a faint ink rim).
+let _puff;
+export function puffTex() {
+  if (_puff) return _puff;
+  const c = canvas(128, 128), g = c.getContext('2d');
+  const blob = (x, y, r) => { g.beginPath(); g.arc(x, y, r, 0, 7); };
+  g.fillStyle = 'rgba(26,16,38,.35)';
+  for (const [x, y, r] of [[64, 70, 40], [38, 78, 26], [90, 76, 28], [58, 46, 28], [82, 52, 22]]) { blob(x, y + 3, r + 3); g.fill(); }
+  g.fillStyle = '#ffffff';
+  for (const [x, y, r] of [[64, 70, 40], [38, 78, 26], [90, 76, 28], [58, 46, 28], [82, 52, 22]]) { blob(x, y, r); g.fill(); }
+  g.fillStyle = 'rgba(0,0,0,.08)'; blob(70, 84, 30); g.fill();
+  _puff = canvasTex(c);
+  return _puff;
+}
+// Gold coin for treasure showers.
+let _coin;
+export function coinTex() {
+  if (_coin) return _coin;
+  const c = canvas(64, 64), g = c.getContext('2d');
+  g.lineWidth = 6; g.strokeStyle = INK;
+  g.fillStyle = '#e09a1a'; g.beginPath(); g.ellipse(32, 34, 25, 25, 0, 0, 7); g.fill(); g.stroke();
+  g.fillStyle = '#ffd23a'; g.beginPath(); g.ellipse(30, 31, 19, 19, 0, 0, 7); g.fill();
+  g.fillStyle = '#fff6b0'; g.beginPath(); g.ellipse(24, 24, 7, 4, -0.7, 0, 7); g.fill();
+  g.strokeStyle = '#c47a14'; g.lineWidth = 4; g.beginPath(); g.moveTo(30, 20); g.lineTo(30, 42); g.stroke();
+  _coin = canvasTex(c);
+  return _coin;
+}
