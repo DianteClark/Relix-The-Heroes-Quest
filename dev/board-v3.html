@@ -1,0 +1,397 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Relix: board concept, The Bone Crypt</title>
+<style>
+@font-face { font-family: 'Luckiest Guy'; src: url(../assets/fonts/luckiest-guy-latin-400-normal.woff2) format('woff2'); }
+@font-face { font-family: 'Nunito'; font-weight: 800; src: url(../assets/fonts/nunito-latin-800-normal.woff2) format('woff2'); }
+html, body { margin: 0; height: 100%; background: #07060a; overflow: hidden; color: #f4ecdf; font-family: 'Nunito', sans-serif; }
+canvas { display: block; touch-action: none; }
+.tag { position: fixed; left: 50%; top: calc(env(safe-area-inset-top) + 12px); transform: translateX(-50%); text-align: center; pointer-events: none; }
+.tag b { font-family: 'Luckiest Guy'; font-weight: normal; font-size: 22px; color: #f2c443; text-shadow: 0 2px 0 #5a3a05, 0 0 20px rgba(0,0,0,.8); letter-spacing: 1px; }
+.tag small { display: block; font-weight: 800; font-size: 12px; color: #b9d8b0; text-shadow: 0 1px 4px #000; }
+</style>
+</head>
+<body>
+<div class="tag"><b>The Bone Crypt</b><small>Board concept · drag to pan · pinch to zoom</small></div>
+<script type="module">
+import * as THREE from '../vendor/three.module.min.js';
+import { buildBoard, makeRng } from '../js/board.js';
+
+// ---------------------------------------------------------------- helpers
+const INK = '#140c1e';
+const rng = makeRng(7);
+const R = () => rng.next();
+const canvasTex = (w, h, draw, repeat) => {
+  const c = document.createElement('canvas'); c.width = w; c.height = h;
+  draw(c.getContext('2d'), w, h);
+  const t = new THREE.CanvasTexture(c);
+  t.colorSpace = THREE.SRGBColorSpace; t.anisotropy = 8;
+  if (repeat) { t.wrapS = t.wrapT = THREE.RepeatWrapping; t.repeat.set(...repeat); }
+  return t;
+};
+let ramp;
+const toon = (o) => {
+  if (!ramp) { ramp = new THREE.DataTexture(new Uint8Array([95, 95, 95, 255, 175, 175, 175, 255, 255, 255, 255, 255]), 3, 1, THREE.RGBAFormat); ramp.minFilter = ramp.magFilter = THREE.NearestFilter; ramp.needsUpdate = true; }
+  return new THREE.MeshToonMaterial({ gradientMap: ramp, ...o });
+};
+const inkMat = new THREE.MeshBasicMaterial({ color: 0x0b0710, side: THREE.BackSide });
+function outline(mesh, k = 1.06) { const o = new THREE.Mesh(mesh.geometry, inkMat); o.scale.setScalar(k); mesh.add(o); return mesh; }
+const wobble = (x, a) => x + (R() - 0.5) * a;
+function inkPoly(g, pts, fill, lw = 4) {
+  g.beginPath(); pts.forEach(([x, y], i) => (i ? g.lineTo(x, y) : g.moveTo(x, y))); g.closePath();
+  if (fill) { g.fillStyle = fill; g.fill(); }
+  g.strokeStyle = INK; g.lineWidth = lw; g.lineJoin = 'round'; g.stroke();
+}
+
+// ---------------------------------------------------------------- textures
+// Hand-inked flagstone, with cracks, chips and moss. Several variants.
+function stoneTex(seed, base = '#7cc4b0') {
+  return canvasTex(256, 256, (g, W, H) => {
+    g.fillStyle = '#1a1620'; g.fillRect(0, 0, W, H);
+    const pts = [[wobble(14, 10), wobble(12, 10)], [wobble(128, 12), wobble(8, 6)], [wobble(244, 10), wobble(14, 10)], [wobble(248, 6), wobble(128, 12)], [wobble(242, 10), wobble(244, 10)], [wobble(128, 12), wobble(248, 6)], [wobble(12, 10), wobble(242, 10)], [wobble(8, 6), wobble(128, 12)]];
+    const grd = g.createLinearGradient(0, 0, W, H);
+    const c = new THREE.Color(base).offsetHSL(0, 0, (R() - 0.5) * 0.06);
+    grd.addColorStop(0, '#' + c.clone().offsetHSL(0, 0, 0.08).getHexString()); grd.addColorStop(1, '#' + c.clone().offsetHSL(0, 0, -0.08).getHexString());
+    inkPoly(g, pts, grd, 7);
+    // flat cel highlight on the top-left bevel
+    g.save(); g.clip();
+    g.strokeStyle = 'rgba(255,255,240,.22)'; g.lineWidth = 10; g.beginPath(); g.moveTo(pts[6][0] + 12, pts[6][1] - 10); g.lineTo(pts[0][0] + 12, pts[0][1] + 12); g.lineTo(pts[2][0] - 10, pts[2][1] + 12); g.stroke();
+    g.strokeStyle = 'rgba(0,0,0,.28)'; g.lineWidth = 12; g.beginPath(); g.moveTo(pts[2][0] - 6, pts[2][1] + 14); g.lineTo(pts[4][0] - 8, pts[4][1] - 8); g.lineTo(pts[6][0] + 14, pts[6][1] - 6); g.stroke();
+    // speckle
+    for (let i = 0; i < 60; i++) { g.fillStyle = `rgba(0,0,0,${0.08 + R() * 0.12})`; g.beginPath(); g.arc(R() * W, R() * H, 1 + R() * 3, 0, 7); g.fill(); }
+    // cracks
+    g.strokeStyle = INK; g.lineCap = 'round';
+    for (let k = 0; k < 2 + Math.floor(R() * 2); k++) {
+      let x = 30 + R() * 190, y = 30 + R() * 190; g.lineWidth = 3; g.beginPath(); g.moveTo(x, y);
+      for (let s = 0; s < 4; s++) { x += (R() - 0.5) * 60; y += (R() - 0.5) * 60; g.lineTo(x, y); }
+      g.stroke();
+    }
+    // moss in the corners
+    for (let k = 0; k < 2; k++) {
+      const [mx, my] = pts[Math.floor(R() * 8)];
+      for (let i = 0; i < 9; i++) { g.fillStyle = ['#6ad84a', '#9af06a', '#4ab83a'][i % 3]; g.beginPath(); g.arc(mx + (R() - 0.5) * 40, my + (R() - 0.5) * 30, 4 + R() * 7, 0, 7); g.fill(); }
+    }
+    g.restore();
+  });
+}
+const STONES = Array.from({ length: 6 }, (_, i) => stoneTex(i));
+// Painted glowing emblems for tile types.
+function emblemTex(kind) {
+  return canvasTex(256, 256, (g, W, H) => {
+    g.translate(W / 2, H / 2);
+    const glow = { monster: '#ff4a5a', treasure: '#ffd23f', trap: '#c88aff', blank: '#ffffff', start: '#9fc4ff' }[kind];
+    // flat painted badge: ink disc + bright color, like a sticker on the stone
+    if (kind !== 'blank') { g.fillStyle = INK; g.beginPath(); g.arc(0, 4, 104, 0, 7); g.fill(); g.fillStyle = { monster: '#3a1030', treasure: '#5a3008', trap: '#2a1450' }[kind]; g.beginPath(); g.arc(0, 0, 96, 0, 7); g.fill(); }
+    g.lineWidth = 10; g.strokeStyle = INK; g.lineJoin = 'round';
+    g.fillStyle = glow;
+    if (kind === 'monster') { // fanged skull
+      g.beginPath(); g.ellipse(0, -14, 62, 58, 0, 0, 7); g.fill(); g.stroke();
+      g.beginPath(); g.rect(-36, 30, 72, 34); g.fill(); g.stroke();
+      g.fillStyle = INK; g.beginPath(); g.ellipse(-24, -14, 16, 19, 0.3, 0, 7); g.ellipse(24, -14, 16, 19, -0.3, 0, 7); g.fill();
+      g.beginPath(); g.moveTo(-6, 14); g.lineTo(0, 2); g.lineTo(6, 14); g.fill();
+      for (let i = -2; i <= 2; i++) { g.fillRect(i * 14 - 2, 32, 4, 30); }
+    } else if (kind === 'treasure') { // coin sack
+      g.beginPath(); g.moveTo(-20, -52); g.quadraticCurveTo(0, -40, 20, -52); g.lineTo(14, -30); g.quadraticCurveTo(70, -10, 62, 34); g.quadraticCurveTo(54, 70, 0, 70); g.quadraticCurveTo(-54, 70, -62, 34); g.quadraticCurveTo(-70, -10, -14, -30); g.closePath(); g.fill(); g.stroke();
+      g.lineWidth = 8; g.beginPath(); g.moveTo(-18, -30); g.quadraticCurveTo(0, -22, 18, -30); g.stroke();
+      g.fillStyle = INK; g.font = '900 64px Luckiest Guy, sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText('$', 0, 22);
+    } else if (kind === 'trap') { // jagged blade
+      g.beginPath(); g.moveTo(-10, -70); g.lineTo(14, -40); g.lineTo(4, -30); g.lineTo(22, -10); g.lineTo(8, 0); g.lineTo(26, 22); g.lineTo(6, 34); g.lineTo(-14, 34); g.lineTo(-24, -10); g.closePath(); g.fill(); g.stroke();
+      g.fillStyle = '#8a5a2a'; g.beginPath(); g.rect(-34, 34, 50, 12); g.fill(); g.stroke(); g.beginPath(); g.rect(-16, 46, 14, 28); g.fill(); g.stroke();
+    } else if (kind === 'blank') { // faint rune circle
+      g.globalAlpha = 0.55; g.lineWidth = 6; g.strokeStyle = glow; g.beginPath(); g.arc(0, 0, 50, 0, 7); g.stroke(); g.beginPath(); g.arc(0, 0, 34, 0, 7); g.stroke();
+      for (let i = 0; i < 6; i++) { g.rotate(Math.PI / 3); g.beginPath(); g.moveTo(0, -34); g.lineTo(0, -50); g.stroke(); }
+    }
+  });
+}
+const EMBLEM = { monster: emblemTex('monster'), treasure: emblemTex('treasure'), trap: emblemTex('trap'), blank: emblemTex('blank') };
+// Crypt brick wall with inked mortar lines.
+const designerWall = new THREE.TextureLoader().load('../assets/ui/v3/wall_tile.webp'); designerWall.colorSpace = THREE.SRGBColorSpace; designerWall.wrapS = designerWall.wrapT = THREE.RepeatWrapping;
+const brickTex = canvasTex(512, 512, (g, W, H) => {
+  g.fillStyle = '#16121c'; g.fillRect(0, 0, W, H);
+  const bh = 48;
+  for (let r = 0; r < H / bh; r++) {
+    const off = (r % 2) * 48;
+    for (let x = -off; x < W; x += 96) {
+      const c = new THREE.Color('#4a4a58').offsetHSL(0.25 * (R() < 0.2 ? 0.1 : 0), 0, (R() - 0.5) * 0.06);
+      inkPoly(g, [[x + 4 + R() * 3, r * bh + 4], [x + 92, r * bh + 3 + R() * 3], [x + 91, r * bh + bh - 3], [x + 3, r * bh + bh - 4 + R() * 2]], '#' + c.getHexString(), 5);
+      g.fillStyle = 'rgba(255,255,255,.09)'; g.fillRect(x + 8, r * bh + 8, 70, 5);
+      if (R() < 0.18) { g.fillStyle = '#4f7a2e'; for (let i = 0; i < 6; i++) { g.beginPath(); g.arc(x + R() * 90, r * bh + bh - 6, 3 + R() * 5, 0, 7); g.fill(); } }
+    }
+  }
+}, [3, 1.5]);
+const floorTex = canvasTex(256, 256, (g, W, H) => {
+  g.fillStyle = '#121016'; g.fillRect(0, 0, W, H);
+  for (let i = 0; i < 4; i++) for (let j = 0; j < 4; j++) {
+    const c = new THREE.Color('#25222c').offsetHSL(0, 0, (R() - 0.5) * 0.04);
+    inkPoly(g, [[i * 64 + 3, j * 64 + 3], [i * 64 + 61, j * 64 + 4], [i * 64 + 60, j * 64 + 61], [i * 64 + 4, j * 64 + 60]], '#' + c.getHexString(), 3);
+  }
+  for (let i = 0; i < 40; i++) { g.fillStyle = 'rgba(160,190,140,.08)'; g.beginPath(); g.arc(R() * W, R() * H, 2 + R() * 6, 0, 7); g.fill(); }
+}, [14, 14]);
+const glowTex = canvasTex(64, 64, (g) => { const r = g.createRadialGradient(32, 32, 0, 32, 32, 32); r.addColorStop(0, '#fff'); r.addColorStop(0.35, 'rgba(255,255,255,.55)'); r.addColorStop(1, 'rgba(255,255,255,0)'); g.fillStyle = r; g.fillRect(0, 0, 64, 64); });
+const webTex = canvasTex(256, 256, (g) => {
+  g.strokeStyle = 'rgba(230,230,240,.55)'; g.lineWidth = 2;
+  for (let a = 0; a < 7; a++) { const t = (a / 6) * Math.PI / 2; g.beginPath(); g.moveTo(0, 0); g.lineTo(Math.cos(t) * 250, Math.sin(t) * 250); g.stroke(); }
+  for (let r = 30; r < 250; r += 34) { g.beginPath(); for (let a = 0; a <= 6; a++) { const t = (a / 6) * Math.PI / 2; const rr = r + Math.sin(a * 2) * 6; a ? g.lineTo(Math.cos(t) * rr, Math.sin(t) * rr) : g.moveTo(Math.cos(t) * rr, Math.sin(t) * rr); } g.stroke(); }
+});
+const bannerTex = canvasTex(128, 320, (g, W, H) => {
+  inkPoly(g, [[10, 10], [118, 10], [118, 290], [64, 250], [10, 290]], '#5a1a2a', 7);
+  g.fillStyle = '#7a2a3a'; g.fillRect(16, 16, 20, 240);
+  g.strokeStyle = '#c9a23a'; g.lineWidth = 6; g.beginPath(); g.moveTo(18, 22); g.lineTo(110, 22); g.stroke();
+  g.fillStyle = '#e8d9b0'; g.beginPath(); g.ellipse(64, 120, 28, 26, 0, 0, 7); g.fill(); g.strokeStyle = INK; g.lineWidth = 5; g.stroke();
+  g.fillStyle = INK; g.beginPath(); g.ellipse(54, 118, 8, 9, 0, 0, 7); g.ellipse(74, 118, 8, 9, 0, 0, 7); g.fill(); g.fillRect(56, 136, 16, 10);
+  g.strokeStyle = '#e8d9b0'; g.lineWidth = 9; g.beginPath(); g.moveTo(34, 160); g.lineTo(94, 200); g.moveTo(94, 160); g.lineTo(34, 200); g.stroke();
+});
+const art = (n) => { const t = new THREE.TextureLoader().load(`../assets/chars/${n}.webp`); t.colorSpace = THREE.SRGBColorSpace; return t; };
+
+// ---------------------------------------------------------------- scene
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.shadowMap.enabled = true; renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+renderer.toneMapping = THREE.NoToneMapping;
+document.body.appendChild(renderer.domElement);
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x4a3478);
+scene.fog = new THREE.Fog(0x5a3a88, 26, 52);
+const camera = new THREE.OrthographicCamera(-10, 10, 10, -10, 0.1, 200);
+scene.add(new THREE.HemisphereLight(0xfff0d8, 0x6a4a9a, 1.7));
+const moon = new THREE.DirectionalLight(0xffe6b8, 2.1);
+moon.position.set(-10, 18, 6); moon.castShadow = true; moon.shadow.mapSize.set(2048, 2048);
+Object.assign(moon.shadow.camera, { left: -14, right: 14, top: 14, bottom: -14 }); moon.shadow.bias = -0.0006;
+scene.add(moon);
+
+const board = buildBoard(1, makeRng(3));
+const S = 1.32, T = 1.16;
+const pos = board.tiles.map((t) => new THREE.Vector3(-t.x * S, 0, -t.z * S));
+// Start and boss pushed out as platforms
+const push = (i, j, d) => { const dir = pos[i].clone().sub(pos[j]).normalize(); pos[i].addScaledVector(dir, d); };
+const n = pos.length - 1;
+push(0, 1, 1.3); push(n, n - 1, 1.5);
+const box = new THREE.Box3().setFromPoints(pos); const ctr = box.getCenter(new THREE.Vector3());
+pos.forEach((p) => p.sub(ctr));
+const size = box.getSize(new THREE.Vector3());
+const world = new THREE.Group(); scene.add(world);
+const flick = [];
+
+// Room floor (dark, sunken) and the two back walls
+const ft = designerWall.clone(); ft.repeat.set(9, 6); ft.needsUpdate = true;
+const floor = new THREE.Mesh(new THREE.PlaneGeometry(60, 60), toon({ map: ft, color: 0xd8e8e8 }));
+floor.rotation.x = -Math.PI / 2; floor.position.y = -0.55; floor.receiveShadow = true; world.add(floor);
+const halfX = size.x / 2 + 2.4, halfZ = size.z / 2 + 2.4;
+function wall(len, x, z, ry) {
+  const g = new THREE.Group();
+  const wt = designerWall.clone(); wt.repeat.set(len / 3.2, 1.4); wt.needsUpdate = true;
+  const m = new THREE.Mesh(new THREE.BoxGeometry(len, 4.6, 0.6), toon({ map: wt, color: 0xe8fff4 }));
+  m.position.y = 1.75; m.receiveShadow = true; outline(m, 1.01); g.add(m);
+  // arches carved into the wall
+  for (let a = -len / 2 + 2; a < len / 2 - 1; a += 3.2) {
+    const arch = new THREE.Mesh(new THREE.ShapeGeometry((() => { const s = new THREE.Shape(); s.moveTo(-0.7, 0); s.lineTo(-0.7, 1.4); s.absarc(0, 1.4, 0.7, Math.PI, 0, true); s.lineTo(0.7, 0); s.closePath(); return s; })()), new THREE.MeshBasicMaterial({ color: 0x050407 }));
+    arch.position.set(a, 0.4, 0.31); g.add(arch);
+    const rim = new THREE.Mesh(new THREE.TorusGeometry(0.78, 0.1, 6, 20, Math.PI), toon({ color: 0x5a5a68 })); rim.position.set(a, 1.8, 0.32); outline(rim, 1.12); g.add(rim);
+    // coffin standing in alcove
+    if (R() < 0.6) {
+      const cof = new THREE.Mesh(new THREE.BoxGeometry(0.7, 1.5, 0.18), toon({ color: 0x4a3324 })); cof.position.set(a, 1.05, 0.12); outline(cof, 1.06); g.add(cof);
+      const cross = new THREE.Mesh(new THREE.BoxGeometry(0.08, 0.5, 0.03), toon({ color: 0xc9a23a })); cross.position.set(a, 1.25, 0.23); g.add(cross);
+      const cr2 = cross.clone(); cr2.scale.set(3.4, 0.16, 1); cr2.position.y = 1.35; g.add(cr2);
+    }
+  }
+  // banners and chains
+  for (let b = -len / 2 + 3.6; b < len / 2 - 2; b += 6.4) {
+    const ban = new THREE.Mesh(new THREE.PlaneGeometry(0.8, 2), new THREE.MeshBasicMaterial({ map: bannerTex, transparent: true, alphaTest: 0.3 }));
+    ban.position.set(b, 2.6, 0.34); g.add(ban); flick.push({ sway: ban, seed: R() * 9 });
+  }
+  g.position.set(x, -0.55, z); g.rotation.y = ry; world.add(g);
+  return g;
+}
+wall(halfX * 2 + 1.2, 0, -halfZ, 0);
+wall(halfZ * 2 + 1.2, -halfX, 0, Math.PI / 2);
+
+// Torches in sconces with warm light pools
+function torch(x, z, h = 2.4, color = 0xffa040) {
+  const sc = new THREE.Mesh(new THREE.CylinderGeometry(0.16, 0.08, 0.3, 8), toon({ color: 0x2a2018 })); sc.position.set(x, h, z); outline(sc, 1.15); world.add(sc);
+  const fl = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTex, color, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false })); fl.position.set(x, h + 0.35, z); fl.scale.set(0.7, 0.95, 1); world.add(fl);
+  const core = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTex, color: 0xfff2c0, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false })); core.position.set(x, h + 0.28, z); core.scale.set(0.28, 0.4, 1); world.add(core);
+  const L = new THREE.PointLight(color, 9, 7, 1.7); L.position.set(x, h + 0.5, z); world.add(L);
+  flick.push({ fl, L, base: 9, seed: R() * 10 });
+}
+for (let a = -halfX + 1.6; a < halfX; a += 3.2) torch(a, -halfZ + 0.55, 1.9);
+for (let a = -halfZ + 1.6; a < halfZ; a += 3.2) torch(-halfX + 0.55, a, 1.9);
+
+// Bone piles, skulls, candles scattered in the dark around the path
+const boneMat = toon({ color: 0xfff6e0 });
+function skull(x, z, s = 1) {
+  const g = new THREE.Group();
+  const head = new THREE.Mesh(new THREE.SphereGeometry(0.16 * s, 12, 10), boneMat); head.scale.y = 0.9; outline(head, 1.12); g.add(head);
+  const jaw = new THREE.Mesh(new THREE.BoxGeometry(0.16 * s, 0.08 * s, 0.12 * s), boneMat); jaw.position.set(0, -0.12 * s, 0.05 * s); g.add(jaw);
+  const eye = new THREE.Mesh(new THREE.SphereGeometry(0.045 * s, 8, 6), new THREE.MeshBasicMaterial({ color: 0x0b0710 }));
+  const e2 = eye.clone(); eye.position.set(-0.06 * s, 0, 0.13 * s); e2.position.set(0.06 * s, 0, 0.13 * s); g.add(eye, e2);
+  g.position.set(x, -0.42, z); g.rotation.y = R() * 6; world.add(g);
+}
+function bone(x, z) { const b = new THREE.Mesh(new THREE.CylinderGeometry(0.04, 0.04, 0.5, 6), boneMat); b.rotation.set(Math.PI / 2, 0, R() * 6); b.position.set(x, -0.5, z); outline(b, 1.25); world.add(b); }
+function candle(x, z, y = -0.55) {
+  const h = 0.2 + R() * 0.35;
+  const c = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.07, h, 8), toon({ color: 0xd8d0b8 })); c.position.set(x, y + h / 2, z); outline(c, 1.18); world.add(c);
+  const f = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTex, color: 0xffb040, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false })); f.position.set(x, y + h + 0.1, z); f.scale.set(0.3, 0.42, 1); world.add(f);
+  flick.push({ fl: f, seed: R() * 10 });
+  return f;
+}
+for (let i = 0; i < 46; i++) {
+  const x = (R() - 0.5) * (halfX * 2 - 1), z = (R() - 0.5) * (halfZ * 2 - 1);
+  if (pos.some((p) => Math.abs(p.x - x) < 0.9 && Math.abs(p.z - z) < 0.9)) continue;
+  const k = R();
+  if (k < 0.3) skull(x, z, 0.9 + R() * 0.5); else if (k < 0.6) bone(x, z); else candle(x, z);
+}
+// purple crystal clusters and gold coin piles
+const cryMat = toon({ color: 0xb87aff, emissive: 0x5a2aa8, emissiveIntensity: 0.4 });
+const coinMat = toon({ color: 0xffc23a });
+for (let i = 0; i < 18; i++) {
+  const x = (R() - 0.5) * (halfX * 2 - 1.5), z = (R() - 0.5) * (halfZ * 2 - 1.5);
+  if (pos.some((p) => Math.abs(p.x - x) < 1 && Math.abs(p.z - z) < 1)) continue;
+  const grp = new THREE.Group(); grp.position.set(x, -0.55, z); world.add(grp);
+  if (i % 2) for (let k = 0; k < 4; k++) { const c = new THREE.Mesh(new THREE.ConeGeometry(0.1 + R() * 0.08, 0.5 + R() * 0.5, 5), cryMat); c.position.set((R() - 0.5) * 0.3, 0.3, (R() - 0.5) * 0.3); c.rotation.set((R() - 0.5) * 0.7, R() * 6, (R() - 0.5) * 0.7); outline(c, 1.15); grp.add(c); }
+  else for (let k = 0; k < 7; k++) { const c = new THREE.Mesh(new THREE.CylinderGeometry(0.09, 0.09, 0.03, 12), coinMat); c.position.set((R() - 0.5) * 0.4, 0.02 + k * 0.03, (R() - 0.5) * 0.4); c.rotation.set((R() - 0.5) * 0.4, 0, (R() - 0.5) * 0.4); outline(c, 1.2); grp.add(c); }
+}
+// warm candle lights pooled in a few spots
+for (let i = 0; i < 4; i++) { const L = new THREE.PointLight(0xffa040, 3, 4, 1.8); L.position.set((R() - 0.5) * halfX * 1.6, 0.4, (R() - 0.5) * halfZ * 1.6); world.add(L); flick.push({ L, base: 3, seed: R() * 9 }); }
+
+// Cobwebs in the wall corners
+const web = new THREE.Mesh(new THREE.PlaneGeometry(2.2, 2.2), new THREE.MeshBasicMaterial({ map: webTex, transparent: true, depthWrite: false, side: THREE.DoubleSide }));
+web.position.set(-halfX + 0.35, 3.1, -halfZ + 0.35); web.rotation.set(0, Math.PI / 4, Math.PI); world.add(web);
+
+// ---------------------------------------------------------------- the path
+const slabGeo = new THREE.BoxGeometry(T, 0.5, T);
+const decalGeo = new THREE.PlaneGeometry(T * 0.7, T * 0.7);
+board.tiles.forEach((t, i) => {
+  const p = pos[i];
+  if (i === 0 || i === n) return;
+  const g = new THREE.Group();
+  const top = toon({ map: STONES[i % 6] });
+  const side = toon({ color: 0x4a8a80 });
+  const slab = new THREE.Mesh(slabGeo, [side, side, top, side, side, side]);
+  slab.position.y = -0.25 + (R() - 0.5) * 0.05; slab.rotation.y = (R() - 0.5) * 0.06; slab.rotation.z = (R() - 0.5) * 0.03;
+  slab.castShadow = slab.receiveShadow = true; outline(slab, 1.035); g.add(slab);
+  const kind = t.type === 'blank' ? 'blank' : t.type;
+  const dec = new THREE.Mesh(decalGeo, new THREE.MeshBasicMaterial({ map: EMBLEM[kind], transparent: true, depthWrite: false, blending: kind === 'blank' ? THREE.NormalBlending : THREE.NormalBlending }));
+  dec.rotation.x = -Math.PI / 2; dec.rotation.z = Math.PI / 4; dec.position.y = 0.012; g.add(dec);
+
+  g.position.set(p.x, 0, p.z);
+  world.add(g);
+});
+// Chain links between consecutive tiles (path reads as one walkway)
+const chainMat = toon({ color: 0x6a6a78 });
+for (let i = 0; i < n; i++) {
+  const a = pos[i], b = pos[i + 1];
+  const mid = a.clone().lerp(b, 0.5);
+  const d = b.clone().sub(a).normalize();
+  for (let k = -1; k <= 1; k += 2) {
+    const link = new THREE.Mesh(new THREE.TorusGeometry(0.07, 0.022, 6, 10), chainMat);
+    link.position.copy(mid).addScaledVector(d, k * 0.06); link.position.y = -0.05;
+    link.rotation.y = Math.atan2(d.x, d.z); link.rotation.x = k > 0 ? Math.PI / 2 : 0;
+    world.add(link);
+  }
+}
+
+// Start: worn round stone circle with a blue rune ring
+{
+  const p = pos[0];
+  const base = new THREE.Mesh(new THREE.CylinderGeometry(1.15, 1.25, 0.5, 32), [toon({ color: 0x4a8a80 }), toon({ map: stoneTex(99, '#9fc4ff') }), toon({ color: 0x4a8a80 })]);
+  base.position.set(p.x, -0.25, p.z); base.castShadow = base.receiveShadow = true; outline(base, 1.03); world.add(base);
+  const ring = new THREE.Mesh(new THREE.RingGeometry(0.82, 0.95, 48), new THREE.MeshBasicMaterial({ color: 0x8ab8ff, transparent: true, opacity: 0.85, side: THREE.DoubleSide, blending: THREE.AdditiveBlending }));
+  ring.rotation.x = -Math.PI / 2; ring.position.set(p.x, 0.02, p.z); world.add(ring); flick.push({ spin: ring, v: 0.4 });
+  const L = new THREE.PointLight(0x8ab8ff, 3, 4, 1.6); L.position.set(p.x, 0.8, p.z); world.add(L);
+}
+
+// Boss dais: stepped platform with braziers
+let bossSprite;
+{
+  const p = pos[n];
+  const d = pos[n].clone().sub(pos[n - 1]).normalize();
+  const steps = [[1.75, 0.3, -0.4], [1.45, 0.3, -0.1], [1.2, 0.3, 0.2]];
+  steps.forEach(([r, h, y], k) => {
+    const m = new THREE.Mesh(new THREE.CylinderGeometry(r, r + 0.06, h, 8), [toon({ color: 0x4a8a80 }), toon({ map: stoneTex(50 + k, '#5a4a90') }), toon({ color: 0x5a4a8a })]);
+    m.position.set(p.x, y, p.z); m.rotation.y = Math.PI / 8; m.castShadow = m.receiveShadow = true; outline(m, 1.03); world.add(m);
+  });
+  const rune = new THREE.Mesh(new THREE.RingGeometry(0.9, 1.05, 8), new THREE.MeshBasicMaterial({ color: 0xffd23f, transparent: true, opacity: 0.8, side: THREE.DoubleSide, blending: THREE.AdditiveBlending }));
+  rune.rotation.x = -Math.PI / 2; rune.position.set(p.x, 0.36, p.z); world.add(rune); flick.push({ spin: rune, v: -0.3 });
+  const side = new THREE.Vector3(-d.z, 0, d.x);
+  [-1, 1].forEach((s) => {
+    const bx = p.x + side.x * 1.55 * s + d.x * 0.4, bz = p.z + side.z * 1.55 * s + d.z * 0.4;
+    const leg = new THREE.Mesh(new THREE.CylinderGeometry(0.1, 0.16, 1.2, 8), toon({ color: 0x2a2420 })); leg.position.set(bx, 0.25, bz); outline(leg, 1.12); world.add(leg);
+    const bowl = new THREE.Mesh(new THREE.CylinderGeometry(0.42, 0.2, 0.3, 10), toon({ color: 0x3a2a20 })); bowl.position.set(bx, 0.95, bz); outline(bowl, 1.1); world.add(bowl);
+    const fire = new THREE.Sprite(new THREE.SpriteMaterial({ map: glowTex, color: 0xff7a2a, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false })); fire.position.set(bx, 1.5, bz); fire.scale.set(1.2, 1.6, 1); world.add(fire);
+    const L = new THREE.PointLight(0xff8a3a, 8, 7, 1.6); L.position.set(bx, 1.7, bz); world.add(L);
+    flick.push({ fl: fire, L, base: 10, seed: R() * 9 });
+  });
+  bossSprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: art('skeleton_general'), transparent: true, alphaTest: 0.05 }));
+  bossSprite.center.set(0.5, 0.02); bossSprite.scale.set(3.4, 3.4, 1);
+  bossSprite.position.set(p.x + d.x * 0.45, 0.36, p.z + d.z * 0.45); world.add(bossSprite);
+}
+
+// Heroes on start and on the path
+function hero(name, i, off = [0, 0], h = 1.5) {
+  const s = new THREE.Sprite(new THREE.SpriteMaterial({ map: art(name), transparent: true, alphaTest: 0.05 }));
+  s.center.set(0.5, 0.02); s.scale.set(h * 0.95, h, 1);
+  s.position.set(pos[i].x + off[0], 0.01, pos[i].z + off[1]); world.add(s);
+  const sh = new THREE.Mesh(new THREE.CircleGeometry(0.32, 20), new THREE.MeshBasicMaterial({ color: 0, transparent: true, opacity: 0.45, depthWrite: false }));
+  sh.rotation.x = -Math.PI / 2; sh.position.set(s.position.x, 0.015, s.position.z); world.add(sh);
+  flick.push({ hop: s, seed: R() * 6 });
+}
+hero('luke', 0, [-0.35, 0.3]); hero('yessi', 0, [0.4, 0.25]); hero('nowtna', 0, [0, -0.45]);
+hero('chan_kong', 7); hero('shi', 15); hero('josue', 22);
+
+// Wisps rising through the crypt
+const wN = 90, wg = new THREE.BufferGeometry(), wp = new Float32Array(wN * 3);
+for (let i = 0; i < wN; i++) { wp[i * 3] = (R() - 0.5) * halfX * 2; wp[i * 3 + 1] = R() * 5 - 0.5; wp[i * 3 + 2] = (R() - 0.5) * halfZ * 2; }
+wg.setAttribute('position', new THREE.BufferAttribute(wp, 3));
+const wisps = new THREE.Points(wg, new THREE.PointsMaterial({ map: glowTex, color: 0xffe2a0, size: 0.16, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending }));
+world.add(wisps);
+
+// ---------------------------------------------------------------- camera + loop
+let zoom = 1; const target = pos[pos.length - 1].clone().multiplyScalar(0.22);
+function fit() {
+  const w = innerWidth, h = innerHeight; renderer.setSize(w, h);
+  const a = w / h;
+  const sx = pos.map((v) => (v.x - v.z) * Math.SQRT1_2), sy = pos.map((v) => (v.x + v.z) * Math.SQRT1_2);
+  const hw = (Math.max(...sx) - Math.min(...sx)) / 2 + 1.6, hh = ((Math.max(...sy) - Math.min(...sy)) / 2 * 0.62 + 3.4) * (a < 1 ? 1.2 : 1.05);
+  const half = Math.max(hh, hw / a) / zoom;
+  Object.assign(camera, { left: -half * a, right: half * a, top: half, bottom: -half }); camera.updateProjectionMatrix();
+}
+fit(); addEventListener('resize', fit);
+let drag = null; const pts = new Map(); let pinch = null;
+renderer.domElement.addEventListener('pointerdown', (e) => { pts.set(e.pointerId, e); if (pts.size === 1) drag = { x: e.clientX, y: e.clientY }; if (pts.size === 2) { const [a, b] = [...pts.values()]; pinch = { d: Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY), z: zoom }; } });
+addEventListener('pointermove', (e) => {
+  if (!pts.has(e.pointerId)) return; pts.set(e.pointerId, e);
+  if (pinch && pts.size === 2) { const [a, b] = [...pts.values()]; zoom = Math.min(3, Math.max(0.6, pinch.z * Math.hypot(a.clientX - b.clientX, a.clientY - b.clientY) / pinch.d)); fit(); return; }
+  if (!drag) return;
+  const sc = (camera.right - camera.left) / innerWidth;
+  target.add(new THREE.Vector3(1, 0, -1).normalize().multiplyScalar(-(e.clientX - drag.x) * sc)).add(new THREE.Vector3(-1, 0, -1).normalize().multiplyScalar((e.clientY - drag.y) * sc * 1.4));
+  drag = { x: e.clientX, y: e.clientY };
+});
+addEventListener('pointerup', (e) => { pts.delete(e.pointerId); if (pts.size < 2) pinch = null; if (!pts.size) drag = null; });
+addEventListener('wheel', (e) => { zoom = Math.min(3, Math.max(0.6, zoom * (e.deltaY < 0 ? 1.1 : 0.9))); fit(); });
+
+const clock = new THREE.Clock();
+renderer.setAnimationLoop(() => {
+  const t = clock.getElapsedTime(), dt = Math.min(clock.getDelta(), 0.05);
+  camera.position.copy(target).add(new THREE.Vector3(10, 11, 10)); camera.lookAt(target);
+  for (const f of flick) {
+    const s = 0.85 + Math.sin(t * 9 + (f.seed || 0)) * 0.1 + Math.sin(t * 23 + (f.seed || 0)) * 0.05;
+    if (f.fl) f.fl.material.opacity = 0.75 + s * 0.25;
+    if (f.L && f.base) f.L.intensity = f.base * s;
+    if (f.spin) f.spin.rotation.z += f.v * 0.016;
+    if (f.sway) f.sway.rotation.z = Math.sin(t * 1.3 + f.seed) * 0.04;
+    if (f.hop) f.hop.position.y = 0.01 + Math.abs(Math.sin(t * 2.2 + f.seed)) * 0.04;
+  }
+  if (bossSprite) bossSprite.scale.y = 3.4 * (1 + Math.sin(t * 2) * 0.015);
+  const a = wisps.geometry.attributes.position.array;
+  for (let i = 1; i < a.length; i += 3) { a[i] += 0.006; a[i - 1] += Math.sin(t + i) * 0.002; if (a[i] > 4.5) a[i] = -0.5; }
+  wisps.geometry.attributes.position.needsUpdate = true;
+  renderer.render(scene, camera);
+});
+window.__ready = true;
+</script>
+</body>
+</html>

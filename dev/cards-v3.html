@@ -1,0 +1,142 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Relix: card concept, Stone & Sky</title>
+<style>
+@font-face { font-family: 'Luckiest Guy'; src: url(../assets/fonts/luckiest-guy-latin-400-normal.woff2) format('woff2'); }
+@font-face { font-family: 'Lilita One'; src: url(../assets/fonts/lilita-one-latin-400-normal.woff2) format('woff2'); }
+@font-face { font-family: 'Nunito'; font-weight: 900; src: url(../assets/fonts/nunito-latin-900-normal.woff2) format('woff2'); }
+* { box-sizing: border-box; }
+body { margin: 0; color: #f4ecdf; font-family: 'Nunito', sans-serif; min-height: 100vh;
+  background: linear-gradient(#ffd27a, #e98a5a 30%, #8a4aa8 70%, #3a2a6a) fixed;
+  padding: calc(env(safe-area-inset-top) + 18px) 14px calc(env(safe-area-inset-bottom) + 40px); }
+h1 { font-family: 'Luckiest Guy'; font-weight: normal; text-align: center; color: #fff; font-size: clamp(28px, 8vw, 44px); margin: 0; letter-spacing: 1px;
+  -webkit-text-stroke: 2px #140c1e; paint-order: stroke fill; text-shadow: 0 4px 0 #140c1e; }
+h2 { font-family: 'Luckiest Guy'; font-weight: normal; color: #fff; font-size: 24px; margin: 30px auto 14px; max-width: 1180px; -webkit-text-stroke: 1.5px #140c1e; paint-order: stroke fill; text-shadow: 0 3px 0 #140c1e; letter-spacing: 1px; }
+.sub { text-align: center; font-weight: 900; color: #2a1438; margin: 6px 0 0; }
+.row { max-width: 1180px; margin: 0 auto; display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 16px; }
+@media (max-width: 900px) { .row { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+@media (max-width: 560px) { .row { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px 12px; } }
+.slot { container-type: inline-size; perspective: 900px; }
+.cap { text-align: center; font-weight: 900; font-size: 12px; color: #2a1438; margin-top: 8px; text-transform: uppercase; letter-spacing: 1px; }
+
+/* Card built from the designer's own layers (CARD_EDIT.psd), 732 x 1101 */
+.card { position: relative; width: 100%; aspect-ratio: 732 / 1101; transform-style: preserve-3d; transition: transform .25s ease-out; touch-action: pan-y; user-select: none;
+  filter: drop-shadow(0 2cqw 0 #140c1e) drop-shadow(0 5cqw 6cqw rgba(40,10,60,.45)); }
+.card > * { position: absolute; }
+.wall { inset: 0; border-radius: 3cqw; background: url(../assets/ui/v3/wall.webp) center / cover; box-shadow: inset 0 0 0 1cqw #140c1e; }
+.wall::after { content: ''; position: absolute; inset: 0; border-radius: inherit; background: linear-gradient(transparent 55%, rgba(0,0,0,.25)); }
+.win { left: 6.3%; top: 4%; width: 87.8%; height: 59.8%; overflow: hidden;
+  -webkit-mask: url(../assets/ui/v3/window_mask.webp) center / 100% 100% no-repeat; mask: url(../assets/ui/v3/window_mask.webp) center / 100% 100% no-repeat;
+  background: linear-gradient(var(--sky1), var(--sky2) 52%, var(--sky3)); }
+.win .rays { position: absolute; left: 50%; top: 78%; width: 220cqw; height: 220cqw; translate: -50% -50%;
+  background: repeating-conic-gradient(rgba(255,255,255,.16) 0 6deg, transparent 6deg 18deg); animation: spin 50s linear infinite; }
+@keyframes spin { to { transform: rotate(360deg); } }
+.win .sun { position: absolute; left: 50%; top: 80%; width: 70cqw; height: 70cqw; translate: -50% -50%; border-radius: 50%; background: radial-gradient(circle, rgba(255,255,255,.55), transparent 65%); }
+.win .hill { position: absolute; left: -10%; right: -10%; bottom: -14%; height: 34%; border-radius: 50% 50% 0 0; background: var(--hill); box-shadow: inset 0 2cqw 0 rgba(255,255,255,.25); }
+.art { left: 5%; top: 1%; width: 90%; height: 61%; display: flex; align-items: flex-end; justify-content: center; pointer-events: none; }
+.art img, .art svg { max-width: 100%; max-height: 100%; object-fit: contain; filter: drop-shadow(0 1.4cqw 0 rgba(20,12,30,.35)); transform-origin: 50% 100%; animation: bob 3s ease-in-out infinite; }
+.art svg { width: 76%; height: 80%; }
+@keyframes bob { 50% { transform: translateY(-1.2cqw); } }
+.frame { inset: 0; width: 100%; height: 100%; pointer-events: none; }
+.ban { left: 3%; top: 60.1%; width: 94%; height: 18.5%; display: grid; place-items: center; }
+.ban img { position: absolute; inset: 0; width: 100%; height: 100%; filter: var(--banf); }
+.ban b { position: relative; font-family: 'Luckiest Guy'; font-weight: normal; font-size: 9.6cqw; color: #fff; letter-spacing: .3cqw; margin-top: -1cqw; white-space: nowrap;
+  -webkit-text-stroke: 1.1cqw #140c1e; paint-order: stroke fill; text-shadow: 0 .9cqw 0 #140c1e; }
+.ban b.sm { font-size: 7.6cqw; }
+.ban small { position: absolute; bottom: 14%; font: 900 3.2cqw 'Nunito'; letter-spacing: .8cqw; color: var(--tagc); text-transform: uppercase; }
+.stats { left: 12%; right: 12%; top: 79%; height: 15%; display: flex; justify-content: space-between; align-items: center; }
+.stat { position: relative; width: 20cqw; height: 20cqw; display: grid; place-items: center; }
+.stat img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; filter: drop-shadow(0 .8cqw 0 #140c1e); }
+.stat b { position: relative; font-family: 'Luckiest Guy'; font-weight: normal; font-size: 9cqw; color: #fff; -webkit-text-stroke: 1cqw #140c1e; paint-order: stroke fill; }
+.stat.atk b { margin-top: -4cqw; }
+.mid { flex: 1; text-align: center; font: 900 3.6cqw/1.15 'Nunito'; color: #fff; text-shadow: 0 .4cqw 0 #140c1e; padding: 0 1cqw; }
+.mid i { font-style: normal; display: block; font-family: 'Luckiest Guy'; font-size: 5cqw; color: var(--tagc); -webkit-text-stroke: .6cqw #140c1e; paint-order: stroke fill; letter-spacing: .4cqw; }
+.text { left: 9%; right: 9%; top: 79.5%; height: 14%; display: grid; place-items: center; text-align: center; font: 7cqw/1.05 'Lilita One'; color: #fff;
+  -webkit-text-stroke: .9cqw #140c1e; paint-order: stroke fill; text-shadow: 0 .8cqw 0 #140c1e; }
+.text small { display: block; font: 900 3.2cqw 'Nunito'; -webkit-text-stroke: 0; color: var(--tagc); letter-spacing: .6cqw; margin-top: 1.4cqw; text-shadow: 0 .3cqw 0 #140c1e; }
+.leg { top: -2cqw; left: 50%; translate: -50% 0; z-index: 5; font-family: 'Luckiest Guy'; font-size: 5cqw; color: #fff; letter-spacing: .6cqw; padding: 1.4cqw 3cqw .6cqw; border-radius: 3cqw;
+  background: linear-gradient(90deg, #ff5ad0, #ffd04a, #5ae0ff, #ff5ad0); background-size: 300% 100%; animation: slide 3s linear infinite; -webkit-text-stroke: .7cqw #140c1e; paint-order: stroke fill; box-shadow: 0 0 0 .8cqw #140c1e, 0 1.2cqw 0 .8cqw #140c1e; }
+@keyframes slide { to { background-position: 300% 0; } }
+.shine { inset: 0; border-radius: 3cqw; pointer-events: none; overflow: hidden; }
+.shine::before { content: ''; position: absolute; top: -20%; bottom: -20%; width: 30%; left: -40%; transform: skewX(-18deg); background: linear-gradient(90deg, transparent, rgba(255,255,255,.18), transparent); animation: sweep 4.5s ease-in-out infinite; }
+@keyframes sweep { 60%, 100% { left: 120%; } }
+
+/* Backs */
+.back .win { background: linear-gradient(var(--sky1), var(--sky2)); }
+.back .win::before { content: ''; position: absolute; inset: 0; background: repeating-linear-gradient(45deg, rgba(255,255,255,.08) 0 3cqw, transparent 3cqw 6cqw); }
+.emb { left: 14%; top: 10%; width: 72%; height: 50%; background: var(--emb); -webkit-mask: url(../assets/ui/dragon.webp) center / contain no-repeat; mask: url(../assets/ui/dragon.webp) center / contain no-repeat; filter: drop-shadow(0 1.2cqw 0 #140c1e); }
+.emb-ink { left: 14%; top: 10%; width: 72%; height: 50%; background: #140c1e; -webkit-mask: url(../assets/ui/dragon.webp) center / contain no-repeat; mask: url(../assets/ui/dragon.webp) center / contain no-repeat; transform: translate(.8cqw, 1.2cqw); }
+.back .ban b { font-size: 10.4cqw; }
+.back .dice { left: 50%; top: 80%; translate: -50% 0; width: 18cqw; height: 18cqw; border-radius: 3.4cqw; background: #f4ecdf; border: 1cqw solid #140c1e; box-shadow: 0 1.2cqw 0 #140c1e; transform: rotate(12deg); }
+.back .dice i { position: absolute; width: 3.6cqw; height: 3.6cqw; border-radius: 50%; background: #140c1e; }
+
+/* Palettes: vibrant, lit, two-tone, like the designer's yellow-to-purple sky */
+.k-hero { --sky1: #9fe0ff; --sky2: #5a8cff; --sky3: #7a4ad8; --hill: #3a5ab8; --tagc: #9fe0ff; --banf: sepia(1) saturate(3) hue-rotate(180deg) brightness(0.71); --emb: #ffd23f; }
+.k-monster { --sky1: #ffd27a; --sky2: #f0904a; --sky3: #a84aa8; --hill: #6a2a6a; --tagc: #ffd27a; --banf: sepia(1) saturate(1.8) hue-rotate(-20deg) brightness(0.54); --emb: #ff6a4a; }
+.k-boss { --sky1: #ffb27a; --sky2: #e8405a; --sky3: #5a1a6a; --hill: #3a0f2a; --tagc: #ffb27a; --banf: sepia(1) saturate(3) hue-rotate(-50deg) brightness(0.65); --emb: #ffd23f; }
+.k-treasure { --sky1: #fff3a0; --sky2: #ffc23a; --sky3: #e8703a; --hill: #a85a1a; --tagc: #ffe27a; --banf: sepia(1) saturate(2.6) hue-rotate(-10deg) brightness(0.77); --emb: #fff3a0; }
+.k-trap { --sky1: #a8ffd8; --sky2: #2ac0a0; --sky3: #1a5a6a; --hill: #0f3a3a; --tagc: #a8ffd8; --banf: sepia(1) saturate(2.4) hue-rotate(120deg) brightness(0.54); --emb: #c88aff; }
+.k-pet { --sky1: #d8ff8a; --sky2: #6ad86a; --sky3: #2a8a6a; --hill: #1a5a3a; --tagc: #d8ff8a; --banf: sepia(1) saturate(2.4) hue-rotate(60deg) brightness(0.61); --emb: #ffd23f; }
+@media (prefers-reduced-motion: reduce) { .card *, .card { animation: none !important; } }
+</style>
+</head>
+<body>
+<h1>Stone &amp; Sky</h1>
+<p class="sub">Built from your own card layers: the brick wall, the boulder frame, the sunset window and the banner.</p>
+<h2>Fronts</h2>
+<div class="row" id="fronts"></div>
+<h2>Backs</h2>
+<div class="row" id="backs"></div>
+<script>
+const POTION = `<svg viewBox="0 0 100 110"><path d="M40 14h20v18c14 6 24 18 24 34 0 22-15 38-34 38S16 88 16 66c0-16 10-28 24-34z" fill="#e8f8ff" stroke="#140c1e" stroke-width="4.5" stroke-linejoin="round"/>
+  <path d="M19.5 62c8-6 18 4 30-1s20-6 30 1c1 2 1.5 5 1.5 8 0 19-13 32-31 32S18 89 18 70c0-3 .5-5.5 1.5-8z" fill="#ff3a5a" stroke="#140c1e" stroke-width="4"/>
+  <path d="M24 76c4 12 14 20 26 20" fill="none" stroke="#c4123a" stroke-width="6" stroke-linecap="round"/>
+  <circle cx="40" cy="74" r="4" fill="#fff"/><circle cx="58" cy="84" r="2.6" fill="#fff"/>
+  <path d="M28 44c-6 8-7 16-6 22" fill="none" stroke="#fff" stroke-width="5" stroke-linecap="round"/>
+  <rect x="35" y="4" width="30" height="14" rx="4" fill="#c88a4a" stroke="#140c1e" stroke-width="4.5"/>
+  <path d="M74 30l3-7 3 7 7 3-7 3-3 7-3-7-7-3z" fill="#fff" stroke="#140c1e" stroke-width="2.4"/></svg>`;
+const PIT = `<svg viewBox="0 0 100 100"><ellipse cx="50" cy="64" rx="46" ry="24" fill="#8ab8b0" stroke="#140c1e" stroke-width="4.5"/>
+  <ellipse cx="50" cy="60" rx="36" ry="17" fill="#2a1a4a" stroke="#140c1e" stroke-width="4"/><ellipse cx="50" cy="62" rx="22" ry="9" fill="#120a24"/>
+  <path d="M30 56c10 6 30 6 40 0" fill="none" stroke="#c88aff" stroke-width="3" stroke-linecap="round"/>
+  <g stroke="#140c1e" stroke-width="3.4" stroke-linejoin="round"><path d="M4 62l12-8 10 6-5 11-13 1z" fill="#b8e8d8"/><path d="M76 52l13-4 8 8-7 10-12-3z" fill="#9ad8c8"/><path d="M30 80l11-4 9 5-4 9-13 0z" fill="#b8e8d8"/><path d="M58 82l12-3 7 6-7 7-11-3z" fill="#9ad8c8"/></g>
+  <g fill="#b8e8d8" stroke="#140c1e" stroke-width="3"><path d="M44 18l8 3-2 8-8-2z"/><path d="M60 30l6 1 0 6-6 0z"/><path d="M34 32l5 3-3 5-5-3z"/></g></svg>`;
+const FRONTS = [
+  { k: 'hero', name: 'Luke', tag: 'Hero', art: 'luke', atk: 1, hp: 80, mid: '<i>4 · 5 · 6</i>Guard' },
+  { k: 'boss', name: 'Vore', tag: 'Boss · Floor 2', art: 'vore', atk: 2, hp: 25, mid: '<i>Every 3rd</i>Hurl to trap' },
+  { k: 'monster', name: 'Trov', tag: 'Monster', art: 'trov', atk: 1, hp: 2 },
+  { k: 'treasure', name: 'Super Potion', tag: 'Treasure', svg: POTION, text: 'Heal 10 health.', when: 'Turn · Battle · PvP' },
+  { k: 'trap', name: 'Endless Pit', tag: 'Trap', svg: PIT, text: 'You die.', legend: true },
+  { k: 'pet', name: 'Tezuki', tag: 'Pet', art: 'kitsune_3', text: '+3 to all heals.', when: 'Equipped' },
+];
+const BACKS = [['hero', 'Hero'], ['monster', 'Monster'], ['boss', 'Boss'], ['treasure', 'Treasure'], ['trap', 'Trap'], ['pet', 'Pet']];
+const front = (c) => `<div class="card k-${c.k}">
+  <div class="wall"></div>
+  <div class="win"><div class="sun"></div><div class="rays"></div><div class="hill"></div></div>
+  <div class="art">${c.svg || `<img src="../assets/chars/${c.art}.webp" alt="">`}</div>
+  <img class="frame" src="../assets/ui/v3/rockframe.webp" alt="">
+  <div class="ban"><img src="../assets/ui/v3/banner.webp" alt=""><b class="${c.name.length > 9 ? 'sm' : ''}">${c.name}</b><small>${c.tag}</small></div>
+  ${c.text ? `<div class="text"><span>${c.text}<small>${c.when || 'On landing'}</small></span></div>`
+    : `<div class="stats"><div class="stat atk"><img src="../assets/ui/sword.webp" alt=""><b>${c.atk}</b></div>${c.mid ? `<div class="mid">${c.mid}</div>` : ''}<div class="stat"><img src="../assets/ui/heart.webp" alt=""><b>${c.hp}</b></div></div>`}
+  ${c.legend ? '<span class="leg">LEGENDARY</span>' : ''}<div class="shine"></div></div>`;
+const PIP = { 5: [[22, 22], [78, 22], [50, 50], [22, 78], [78, 78]] };
+const back = ([k, word]) => `<div class="card back k-${k}">
+  <div class="wall"></div><div class="win"></div>
+  <div class="emb-ink"></div><div class="emb"></div>
+  <img class="frame" src="../assets/ui/v3/rockframe.webp" alt="">
+  <div class="ban"><img src="../assets/ui/v3/banner.webp" alt=""><b>${word}</b></div>
+  <div class="dice">${PIP[5].map(([x, y]) => `<i style="left:calc(${x}% - 1.8cqw);top:calc(${y}% - 1.8cqw)"></i>`).join('')}</div>
+  <div class="shine"></div></div>`;
+document.getElementById('fronts').innerHTML = FRONTS.map((c) => `<div class="slot">${front(c)}<div class="cap">${c.tag}</div></div>`).join('');
+document.getElementById('backs').innerHTML = BACKS.map((b) => `<div class="slot">${back(b)}<div class="cap">${b[1]} back</div></div>`).join('');
+document.querySelectorAll('.card').forEach((card) => {
+  const move = (e) => { const r = card.getBoundingClientRect(); const x = (e.clientX - r.left) / r.width - 0.5, y = (e.clientY - r.top) / r.height - 0.5; card.style.transform = `rotateY(${x * 18}deg) rotateX(${-y * 18}deg) scale(1.03)`; };
+  const reset = () => { card.style.transform = ''; };
+  card.addEventListener('pointermove', move); card.addEventListener('pointerdown', move);
+  ['pointerleave', 'pointerup', 'pointercancel'].forEach((t) => card.addEventListener(t, reset));
+});
+</script>
+</body>
+</html>
