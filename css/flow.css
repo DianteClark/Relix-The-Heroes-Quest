@@ -92,3 +92,11 @@
 @media (prefers-reduced-motion: reduce) {
   .flow-layer *, .flow-layer { animation-duration: .01ms !important; transition-duration: .01ms !important; }
 }
+
+.flow-layer.tip { background: rgba(6,4,10,.55); justify-content: flex-end; padding: 0 12px calc(env(safe-area-inset-bottom, 0px) + 120px); }
+.tip-card { display: flex; gap: 12px; align-items: flex-end; max-width: 520px; width: 100%; background: linear-gradient(#fbecc4, #e2c890); color: #3a240c; border: 3px solid #140c1e; border-radius: 18px; padding: 14px 16px 12px; box-shadow: 0 6px 0 #140c1e, 0 18px 40px rgba(0,0,0,.5); animation: dropIn .45s cubic-bezier(.2,1.4,.4,1) both; }
+.tip-card img { width: 86px; margin: -40px -4px -12px -6px; filter: drop-shadow(0 4px 0 rgba(20,12,30,.4)); }
+.tip-card small { font: 900 11px var(--ui); letter-spacing: 3px; text-transform: uppercase; color: #8a5a0a; }
+.tip-card b { display: block; font-family: var(--title); font-weight: normal; font-size: 22px; color: #2a1608; letter-spacing: .5px; }
+.tip-card p { margin: 4px 0 6px; font: 800 14px/1.35 var(--ui); }
+.tip-card .rv-hint { color: #8a5a0a; font-size: 11px; }

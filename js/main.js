@@ -197,6 +197,16 @@ async function rollTray(p, values, label, opts, kind) {
   });
 }
 
+const TIPS = {
+  move: ['Pick your path', 'You rolled two dice: move by either one. Doubles let you move the total. Tap a glowing tile.', 'luke'],
+  monster: ['Monster fight!', 'Roll one die per HP the monster has left. 4-5 hits, 6 crits for double. 2-3 misses and you take damage, 1 hurts double.', 'skeleton_warrior'],
+  boss: ['The Boss Room', 'Bosses take 5 dice every round, one round per turn. Every 3rd roll in the room fires the boss skill. Land the killing blow to claim the Relic!', 'skeleton_general'],
+  trap: ['Trap!', 'Traps fire as soon as you land. A Trap Resist card can cancel one.', 'shi'],
+  pvp: ['PvP!', 'Share a tile with a rival and you fight. Highest roll wins and deals 5 damage. Ties re-roll for +5 more.', 'chan_kong'],
+  treasure: ['Treasure', 'Cards are played from the prompts when they can be used: at the start of your turn, before a battle roll, or before PvP.', 'goblin_3'],
+};
+const tipFor = (key, p) => (p && !p.isBot && game.speed >= 0.05 && TIPS[key] ? flow.tip(key, ...TIPS[key]) : null);
+
 async function showBeat(type, d) {
   const p = d.player != null ? game.players[d.player] : null;
   switch (type) {
@@ -208,10 +218,12 @@ async function showBeat(type, d) {
       return flow.turn(p, { human: !p.isBot, guild: game.guildOf(p) });
     case 'cardReveal':
       if (p.isBot && game.speed < 0.2) return;
+      if (!p.isBot && game.current === p) { await flow.cards(p, d.cards, { human: true, why: d.why }); return tipFor('treasure', p); }
       // Only the human whose turn it is sees the faces; everyone else sees card backs.
       return flow.cards(p, d.cards, { human: !p.isBot, why: d.why, hidden: p.isBot || game.current !== p });
     case 'trapReveal':
-      return flow.trap(p, d.card, { human: !p.isBot });
+      await flow.trap(p, d.card, { human: !p.isBot });
+      return tipFor('trap', p);
     case 'floorIntro':
       try { audio.music('floor' + d.floor); } catch { /* ignore */ }
       return flow.floor(d.floor, game.boss.def, { human: anyHuman() });
@@ -230,6 +242,7 @@ async function showBeat(type, d) {
         haptics.impact(1);
         await battle.open({ left: fighter(p), right: foe(d.enemy), kind: d.kind, theme: theme() });
       } else await sleep(500 * game.speed);
+      await tipFor(d.kind === 'boss' ? 'boss' : 'monster', p);
       return;
     case 'exchange': {
       if (!battle?.isOpen) return;
@@ -265,7 +278,9 @@ async function showBeat(type, d) {
       const other = d.sides.flat().map((id) => game.players[id]).find((q) => q !== mover && !game.sameGuild(q, mover));
       ui.pvpLeft = mover.id; ui.pvpRight = other.id;
       haptics.impact(2);
-      return battle.open({ left: fighter(mover), right: { ...fighter(other), side: 'enemy' }, kind: 'pvp', theme: theme() });
+      await battle.open({ left: fighter(mover), right: { ...fighter(other), side: 'enemy' }, kind: 'pvp', theme: theme() });
+      const hp = d.sides.flat().map((id) => game.players[id]).find((q) => !q.isBot);
+      return tipFor('pvp', hp);
     }
     case 'pvpHit': {
       if (!battle?.isOpen) return;
@@ -454,7 +469,11 @@ function showPlayer(p) {
 }
 
 // ---------------- Human choices ----------------
-function humanChoose(p, req) {
+async function humanChoose(p, req) {
+  if (req.kind === 'move') await tipFor('move', p);
+  return humanChoose2(p, req);
+}
+function humanChoose2(p, req) {
   viewer = p;
   scheduleHud();
   if (req.kind === 'guild_accept' && mods.guildui?.inviteScroll) {

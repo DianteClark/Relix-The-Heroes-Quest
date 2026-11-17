@@ -164,6 +164,19 @@ export class Flow {
     await this.remove(el, 500);
   }
 
+  // One-time coach tips. Stored per device so each shows once.
+  async tip(key, title, text, art) {
+    let seen = {};
+    try { seen = JSON.parse(localStorage.getItem('relix.tips.v1') || '{}'); } catch { /* ignore */ }
+    if (seen[key]) return;
+    seen[key] = 1;
+    try { localStorage.setItem('relix.tips.v1', JSON.stringify(seen)); } catch { /* ignore */ }
+    const el = this.layer('tip', `<div class="tip-card">${art ? `<img src="assets/chars/${art}.webp" alt="">` : ''}<div><small>Tip</small><b>${esc(title)}</b><p>${esc(text)}</p><span class="rv-hint">Tap to continue</span></div></div>`);
+    this.sfx('open');
+    await this.waitTap(el, 20000);
+    await this.remove(el);
+  }
+
   async banner(text, color = '') {
     const el = this.layer(`callout ${color}`, `<div>${text}</div>`);
     await sleep(Math.max(700, 1300 * this.speed()));
