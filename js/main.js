@@ -131,6 +131,7 @@ function startGame(config) {
   if (!battle && mods.battle?.BattleScene) { battle = new mods.battle.BattleScene(); window.relixBattle = battle; }
   game = new Game(config, io);
   window.relix = game;
+  window.relixDebug = { showEnd };
   if (battle) battle.speed = game.speed;
   try { tray?.warmup?.(prof.dice); } catch { /* ignore */ }
   viewer = game.players.find((p) => !p.isBot) || null;
@@ -287,6 +288,19 @@ async function showBeat(type, d) {
   }
 }
 
+// Floating numbers over heroes on the board (battle scenes show their own).
+function floatAt(pid, text, cls) {
+  if (!game || game.speed < 0.05 || battle?.isOpen) return;
+  const pt = view?.screenOf?.(pid) || null;
+  const el = document.createElement('div');
+  el.className = `floatnum ${cls}`;
+  el.textContent = text;
+  el.style.left = (pt ? pt.x : innerWidth / 2) + (Math.random() - 0.5) * 18 + 'px';
+  el.style.top = (pt ? pt.y : innerHeight * 0.45) + 'px';
+  document.body.appendChild(el);
+  setTimeout(() => el.remove(), 1300);
+}
+
 function onEvent(type, d) {
   switch (type) {
     case 'floor':
@@ -301,6 +315,7 @@ function onEvent(type, d) {
       break;
     case 'hp': {
       view.flash(d.player, d.delta < 0 ? 'hurt' : 'heal');
+      floatAt(d.player, d.delta < 0 ? `${d.delta}` : `+${d.delta}`, d.delta < 0 ? 'dmg' : 'heal');
       sfx(d.delta < 0 ? 'hurt' : 'heal');
       if (battle?.isOpen) {
         const side = ui.combat?.player === d.player || ui.pvpLeft === d.player ? 'left' : ui.pvpRight === d.player ? 'right' : null;
@@ -320,7 +335,7 @@ function onEvent(type, d) {
     case 'combat': view.showEnemy(game.players[d.player].pos, d.boss ? null : d.enemy.art, d.boss); break;
     case 'combatEnd': view.hideEnemy(); break;
     case 'bossDown': view.fx('relic', game.bossIdx); break;
-    case 'draw': view.fx('loot', game.players[d.player].pos); break;
+    case 'draw': view.fx('loot', game.players[d.player].pos); floatAt(d.player, `+${d.cards.length} card${d.cards.length > 1 ? 's' : ''}`, 'loot'); break;
     case 'guilds': sfx('guild'); break;
   }
   if (['equip', 'play', 'hand', 'draw', 'guilds', 'bossDown', 'respawn', 'revive'].includes(type)) view.syncPlayers(game);
@@ -548,15 +563,48 @@ function showEnd(r) {
     coins = 20 + human.relics.length * 25 + (winners.includes(human) ? 60 : 0) + human.kills * 2;
     mods.profile.awardCoins(coins);
   }
-  $('#endBox').innerHTML = `<h1>${r.kind === 'loss' ? 'Defeat' : 'Victory!'}</h1>
-    <div class="winners">${winners.map((p) => `<img src="${artUrl(heroDef(p.hero).art)}" alt="">`).join('')}</div>
+  const ranked = r.scores;
+  const podium = ranked.slice(0, 3).map((sc, i) => `<div class="pod p${i + 1}" style="${sc.color ? `--gcol:${sc.color}` : ''}">
+      <div class="pod-art">${sc.members.map((p) => `<img src="${artUrl(heroDef(p.hero).art)}" alt="">`).join('')}</div>
+      <div class="pod-step"><b>${i + 1}</b><span>${esc(sc.label)}</span>${gems(sc.relics)}</div></div>`);
+  const order = podium.length === 3 ? [podium[1], podium[0], podium[2]] : podium;
+  const ps = game.players;
+  const top = (f) => ps.reduce((a, b) => (f(b) > f(a) ? b : a), ps[0]);
+  const awards = [
+    ['Slayer', top((p) => p.kills), (p) => `${p.kills} kills`],
+    ['Relic Hoarder', top((p) => p.relics.length), (p) => `${p.relics.length} Relics`],
+    ['Unkillable', ps.reduce((a, b) => (b.deaths < a.deaths ? b : a), ps[0]), (p) => `${p.deaths} deaths`],
+  ];
+  $('#endBox').innerHTML = `<canvas id="confetti"></canvas>
+    <h1 class="${r.kind === 'loss' ? 'loss' : ''}">${r.kind === 'loss' ? 'Defeat' : 'Victory!'}</h1>
     <p class="end-text">${esc(r.text)}</p>
-    <div>${r.scores.map((s) => `<div class="score"><b style="${s.color ? `color:${s.color}` : ''}">${esc(s.label)}${s.members.length > 1 ? ` <small>(${s.members.map((p) => esc(p.name)).join(', ')})</small>` : ''}</b>${gems(s.relics)}</div>`).join('')}</div>
+    <div class="podium">${order.join('')}</div>
+    <div class="awards">${awards.map(([t, p, f]) => `<div class="award"><span class="aw-face" style="background-image:url(${artUrl(heroDef(p.hero).art)})"></span><b>${t}</b><small>${esc(p.name)} · ${f(p)}</small></div>`).join('')}</div>
+    ${ranked.length > 3 ? `<div>${ranked.slice(3).map((sc, i) => `<div class="score"><b>${i + 4}. ${esc(sc.label)}</b>${gems(sc.relics)}</div>`).join('')}</div>` : ''}
     ${coins ? `<p class="coins-won">+${coins} Relix Coins</p>` : ''}
-    <p class="end-stats">${r.turns} turns · ${r.stats.deaths} deaths · ${r.stats.pvp} PvP battles</p>
+    <p class="end-stats">${r.turns} turns · ${r.stats.deaths} deaths · ${r.stats.pvp} PvP battles${r.stats.fiveKind ? ` · ${r.stats.fiveKind} five-of-a-kind` : ''}</p>
     <div class="menu-list"><button class="btn big" id="eAgain">Play Again</button><button class="btn ghost" id="eTitle">Title Screen</button></div>`;
+  if (r.kind !== 'loss') confetti($('#confetti'));
   onTap($('#eAgain'), () => backToTitle());
   onTap($('#eTitle'), () => backToTitle());
+}
+
+function confetti(cv) {
+  const ctx = cv.getContext('2d');
+  const W = (cv.width = innerWidth), H = (cv.height = innerHeight);
+  const cols = ['#f2c443', '#ff5a7a', '#5ad1ff', '#8dff7a', '#c88aff', '#ffffff'];
+  const bits = Array.from({ length: 140 }, () => ({ x: Math.random() * W, y: -20 - Math.random() * H * 0.6, vx: (Math.random() - 0.5) * 2, vy: 2 + Math.random() * 3, r: Math.random() * 6, vr: (Math.random() - 0.5) * 0.3, s: 6 + Math.random() * 6, c: cols[Math.floor(Math.random() * cols.length)] }));
+  const t0 = performance.now();
+  const tick = () => {
+    ctx.clearRect(0, 0, W, H);
+    for (const b of bits) {
+      b.x += b.vx + Math.sin((performance.now() - t0) / 300 + b.r) * 0.6; b.y += b.vy; b.r += b.vr;
+      if (b.y > H + 20) { b.y = -20; b.x = Math.random() * W; }
+      ctx.save(); ctx.translate(b.x, b.y); ctx.rotate(b.r); ctx.fillStyle = b.c; ctx.fillRect(-b.s / 2, -b.s / 4, b.s, b.s / 2); ctx.restore();
+    }
+    if (performance.now() - t0 < 9000 && document.body.contains(cv)) requestAnimationFrame(tick); else ctx.clearRect(0, 0, W, H);
+  };
+  tick();
 }
 
 // Debug: ?demo=N starts a bot game immediately (&human = seat 1 is you).
