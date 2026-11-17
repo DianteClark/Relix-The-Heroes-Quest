@@ -9,7 +9,7 @@ let hooks = {};
 export function show(id) { $$('.screen').forEach((s) => s.classList.toggle('active', s.id === id)); }
 function closeModal() { $('#modal').classList.add('hidden'); }
 function openModal(html) {
-  $('#modalBody').innerHTML = `<button class="icon-btn close" data-close>✕</button>${html}`;
+  $('#modalBody').innerHTML = `<button class="icon-btn close" data-close>X</button>${html}`;
   $('#modal').classList.remove('hidden');
   $$('[data-close]', $('#modal')).forEach((b) => (b.onclick = closeModal));
 }
@@ -85,7 +85,7 @@ function renderSetup() {
 function pickHero(i) {
   const taken = setup.slots.filter((s, j) => j !== i && s.type !== 'off').map((s) => s.hero);
   openModal(`<h2>Choose a Hero</h2><div class="pick-grid">
-    <button data-h="random"><div style="font-family:var(--title);font-size:22px;padding:30px 0">🎲 Random</div></button>
+    <button data-h="random"><div style="font-family:var(--title);font-size:22px;padding:30px 0">Random</div></button>
     ${HEROES.map((h) => `<button data-h="${h.id}" class="${taken.includes(h.id) ? 'taken' : ''}">${heroFront(h.id)}${heroBack(h.id)}</button>`).join('')}
   </div>`);
   $$('[data-h]', $('#modal')).forEach((b) => (b.onclick = () => { setup.slots[i].hero = b.dataset.h; if (setup.slots[i].type === 'off') setup.slots[i].type = 'human'; closeModal(); renderSetup(); }));

@@ -34,7 +34,7 @@ Before each battle roll you may play treasure cards. At the start of a battle yo
 - **Bosses:** always 5 dice (Enguxi can lower this). Each turn in the Boss Room is **one** battle roll. Everyone in the room counts toward the same roll counter. On every **3rd roll** the boss's skill fires automatically, before that player acts.
 - If your roll kills the enemy, you take no damage from that roll.
 - Sword and Large Sword add their bonus only if you rolled at least one hit. Hero skill bonuses always add.
-- Your hero skill works once per battle. A whole boss fight counts as one battle, even across turns; after that it comes down to treasures and luck (Refresh lets you use it again).
+- Your hero skill works once per battle. A whole boss fight counts as one battle, even across turns. If you are pushed out of the Boss Room and come back, that is a new battle and your skill check is available again; after that it comes down to treasures and luck (Refresh lets you use it again).
 - Extra Loot means you draw 2 treasures in total for that monster. Surprise gives no treasure at all.
 - Inner Strength multiplies all the damage you deal that roll: ×2, ×4 with 2 cards, ×6 with 3. Ambush multiplies boss damage by ×3 and stacks with Inner Strength.
 
@@ -46,6 +46,8 @@ Before each battle roll you may play treasure cards. At the start of a battle yo
 | 3 | Raskon | 30 | 2 | 10 damage to every player in the Boss Room |
 | 4 | Enguxi | 35 | 2 | Everyone uses 1 fewer combat die, down to 1. Lasts until Enguxi falls |
 | 5 | Ikias | 40 | 2 | Misses deal double damage that roll |
+
+**Five of a kind:** if all 5 boss dice show the same number (any number, even 1s), the boss dies instantly.
 
 ### Monsters (15 cards)
 5× Skeleton Warrior (1 HP), 4× Trov (2 HP), 3× Dragonkin (3 HP), 2× Brevha (4 HP), 1× Ikias (5 HP, attack 2).
@@ -74,13 +76,14 @@ Whenever players who aren't in the same guild share a tile (except Start and the
 | Monster | Treasures go to the discard pile. Relics go to the Boss Room |
 | Boss | Everything goes to the Boss Room, for whoever kills the boss |
 | Trap | Everything stays on that tile for the next player who lands there |
+| Trap sprung by Trickster | Counts as a player kill: the Trickster player takes everything |
 
 Anything still left on tiles when the boss falls goes to the player who killed it.
 
 **Standard:** respawn at Start with **40 HP** and draw 1 Treasure (2 if you died in the Boss Room). A Revival Potion in hand triggers automatically: you stay where you are with 40 HP and keep everything. If a guild leader dies, the guild disbands.
 
 ## Guilds (4+ players)
-- Formed with a **Guild Banner**. Invited players must accept. Max size is half the players, rounded down.
+- Formed with a **Guild Banner**. The leader names the guild, then invited players (only those not already in a guild) must accept. Max size is half the players, rounded down.
 - Members never PvP each other, and bombs, steals, Swap and Yessi's bomb only hit enemies, never guild-mates.
 - In a monster or boss fight, a guild member on the same tile may **reroll your failed dice once per battle**.
 - A guild's Relics count together at the end. A **Guild Bomb** disbands a guild.

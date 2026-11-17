@@ -42,6 +42,35 @@ function roundedSlab(w, h, r, depth, bevel) {
   return g;
 }
 
+
+// ---------- hand-drawn look: cel shading + ink outlines to match the art ----------
+let _ramp = null;
+function toonRamp() {
+  if (_ramp) return _ramp;
+  const d = new Uint8Array([90, 90, 90, 255, 175, 175, 175, 255, 255, 255, 255, 255]);
+  _ramp = new THREE.DataTexture(d, 3, 1, THREE.RGBAFormat);
+  _ramp.minFilter = _ramp.magFilter = THREE.NearestFilter;
+  _ramp.needsUpdate = true;
+  return _ramp;
+}
+function toon(color, extra = {}) {
+  return new THREE.MeshToonMaterial({ color, gradientMap: toonRamp(), ...extra });
+}
+const INK = new THREE.MeshBasicMaterial({ color: 0x140c1e, side: THREE.BackSide });
+// Inverted-hull outline: a slightly larger dark copy rendered from the inside.
+function inked(mesh, t = 0.035) {
+  const o = new THREE.Mesh(mesh.geometry, INK);
+  mesh.geometry.computeBoundingBox();
+  const b = mesh.geometry.boundingBox, sz = new THREE.Vector3();
+  b.getSize(sz);
+  o.scale.set(1 + (2 * t) / Math.max(sz.x, 0.01), 1 + (2 * t) / Math.max(sz.y, 0.01), 1 + (2 * t) / Math.max(sz.z, 0.01));
+  const c = new THREE.Vector3(); b.getCenter(c);
+  o.position.copy(c).multiplyScalar(-(o.scale.x - 1)).add(mesh.position);
+  o.position.y = mesh.position.y - c.y * (o.scale.y - 1);
+  mesh.parent ? mesh.parent.add(o) : null;
+  return o;
+}
+
 export class BoardView {
   constructor(container) {
     this.container = container;
@@ -220,14 +249,15 @@ export class BoardView {
 
     const groundTex = this.makeGroundTexture(theme);
     const ground = new THREE.Mesh(new THREE.PlaneGeometry(90, 90), new THREE.MeshStandardMaterial({ color: 0xffffff, map: groundTex, roughness: 0.95 }));
-    groundTex.repeat.set(22, 22);
+    groundTex.repeat.set(11, 11);
     ground.rotation.x = -Math.PI / 2;
     ground.receiveShadow = true;
     this.world.add(ground);
 
-    const pad = new THREE.Mesh(roundedSlab(this.bounds.w + 1.6, this.bounds.d + 1.6, 0.6, 0.1, 0.06), new THREE.MeshStandardMaterial({ color: new THREE.Color(theme.ground).multiplyScalar(0.8), roughness: 0.9 }));
+    const pad = new THREE.Mesh(roundedSlab(this.bounds.w + 1.6, this.bounds.d + 1.6, 0.6, 0.1, 0.06), toon(new THREE.Color(theme.ground).multiplyScalar(0.8)));
     pad.receiveShadow = true;
     this.world.add(pad);
+    inked(pad, 0.05);
 
     const slabGeo = roundedSlab(T, T, 0.16, 0.12, 0.05);
     const insetGeo = roundedSlab(T * 0.8, T * 0.8, 0.12, 0.02, 0.02);
@@ -235,7 +265,7 @@ export class BoardView {
     const iconGeo = new THREE.PlaneGeometry(T * 0.7, T * 0.7);
     const icons = { [TILE.MONSTER]: 'monster', [TILE.TREASURE]: 'treasure', [TILE.TRAP]: 'trap' };
     const chevGeo = new THREE.ConeGeometry(0.09, 0.2, 3);
-    const chevMat = new THREE.MeshStandardMaterial({ color: 0xffffff, emissive: 0xffffff, emissiveIntensity: 0.35 });
+    const chevMat = new THREE.MeshBasicMaterial({ color: 0xfff6d8 });
 
     tiles.forEach((t, i) => {
       const g = new THREE.Group();
@@ -245,11 +275,12 @@ export class BoardView {
       let inset;
       if (plat) {
         const h = i === 0 ? 0.2 : 0.46;
-        const base = new THREE.Mesh(new THREE.CylinderGeometry(R, R + 0.08, h, 40), new THREE.MeshStandardMaterial({ color: stone.clone().multiplyScalar(0.9), roughness: 0.85 }));
+        const base = new THREE.Mesh(new THREE.CylinderGeometry(R, R + 0.08, h, 40), toon(stone.clone().multiplyScalar(0.9)));
         base.position.y = h / 2;
         base.castShadow = true; base.receiveShadow = true;
         g.add(base);
-        inset = new THREE.Mesh(new THREE.CylinderGeometry(R - 0.14, R - 0.14, 0.04, 40), new THREE.MeshStandardMaterial({ color: TYPE_COLORS[t.type], roughness: 0.55, emissive: TYPE_COLORS[t.type], emissiveIntensity: 0.12 }));
+        inked(base, 0.04);
+        inset = new THREE.Mesh(new THREE.CylinderGeometry(R - 0.14, R - 0.14, 0.04, 40), toon(TYPE_COLORS[t.type], { emissive: TYPE_COLORS[t.type], emissiveIntensity: 0.12 }));
         inset.position.y = h + 0.02;
         inset.receiveShadow = true;
         g.add(inset);
@@ -264,15 +295,16 @@ export class BoardView {
           g.add(label);
         } else this.bossRune = rune;
       } else {
-        const slab = new THREE.Mesh(slabGeo, new THREE.MeshStandardMaterial({ color: stone.clone().offsetHSL(0, 0, Math.sin(i * 12.9) * 0.04), roughness: 0.85 }));
+        const slab = new THREE.Mesh(slabGeo, toon(stone.clone().offsetHSL(0, 0, Math.sin(i * 12.9) * 0.04)));
         slab.castShadow = true; slab.receiveShadow = true;
         g.add(slab);
-        inset = new THREE.Mesh(insetGeo, new THREE.MeshStandardMaterial({ color: TYPE_COLORS[t.type], roughness: 0.6, emissive: TYPE_COLORS[t.type], emissiveIntensity: 0.08 }));
+        inked(slab, 0.03);
+        inset = new THREE.Mesh(insetGeo, toon(TYPE_COLORS[t.type], { emissive: TYPE_COLORS[t.type], emissiveIntensity: 0.1 }));
         inset.position.y = 0.16;
         inset.receiveShadow = true;
         g.add(inset);
         if (icons[t.type]) {
-          const ic = new THREE.Mesh(iconGeo, new THREE.MeshStandardMaterial({ map: tex(`assets/tiles/${icons[t.type]}.webp`), transparent: true, alphaTest: 0.1, roughness: 0.7 }));
+          const ic = new THREE.Mesh(iconGeo, new THREE.MeshBasicMaterial({ map: tex(`assets/tiles/${icons[t.type]}.webp`), transparent: true, alphaTest: 0.1 }));
           ic.rotation.x = -Math.PI / 2;
           ic.rotation.z = Math.PI / 4;
           ic.position.y = inset.position.y + 0.075;
@@ -378,15 +410,23 @@ export class BoardView {
 
   makeGroundTexture(theme) {
     const c = document.createElement('canvas');
-    c.width = c.height = 128;
+    c.width = c.height = 256;
     const x = c.getContext('2d');
     const base = new THREE.Color(theme.ground);
     x.fillStyle = '#' + base.getHexString();
-    x.fillRect(0, 0, 128, 128);
+    x.fillRect(0, 0, 256, 256);
+    // Flagstones with wobbly ink edges, like the art's line work.
+    const rnd = (a) => (Math.random() - 0.5) * a;
     for (let i = 0; i < 4; i++) for (let j = 0; j < 4; j++) {
-      const k = base.clone().offsetHSL(0, 0, (Math.random() - 0.5) * 0.025);
-      x.fillStyle = '#' + k.getHexString();
-      x.fillRect(i * 32 + 1, j * 32 + 1, 30, 30);
+      const k = base.clone().offsetHSL(0, 0, rnd(0.05));
+      const x0 = i * 64 + 3, y0 = j * 64 + 3;
+      x.beginPath();
+      x.moveTo(x0 + rnd(4), y0 + rnd(4)); x.lineTo(x0 + 58 + rnd(4), y0 + rnd(4));
+      x.lineTo(x0 + 58 + rnd(4), y0 + 58 + rnd(4)); x.lineTo(x0 + rnd(4), y0 + 58 + rnd(4)); x.closePath();
+      x.fillStyle = '#' + k.getHexString(); x.fill();
+      x.strokeStyle = 'rgba(15,8,20,.55)'; x.lineWidth = 2.2; x.stroke();
+      x.strokeStyle = 'rgba(255,255,255,.06)'; x.lineWidth = 1;
+      for (let h = 0; h < 3; h++) { x.beginPath(); const hx = x0 + 10 + Math.random() * 38, hy = y0 + 10 + Math.random() * 38; x.moveTo(hx, hy); x.lineTo(hx + 8, hy - 5); x.stroke(); }
     }
     const t = new THREE.CanvasTexture(c);
     t.wrapS = t.wrapT = THREE.RepeatWrapping;
@@ -396,7 +436,7 @@ export class BoardView {
 
   decorate(theme) {
     const w = this.bounds.w, d = this.bounds.d;
-    const pillarMat = new THREE.MeshStandardMaterial({ color: new THREE.Color(theme.ground).lerp(new THREE.Color(0x777777), 0.35), roughness: 0.9 });
+    const pillarMat = toon(new THREE.Color(theme.ground).lerp(new THREE.Color(0x777777), 0.35));
     const spots = [];
     const m = 1.5;
     // Pillars and torches along the two far walls only, so nothing blocks the view.
@@ -409,16 +449,18 @@ export class BoardView {
       pillar.receiveShadow = true;
       pillar.castShadow = true;
       this.world.add(pillar);
+      inked(pillar, 0.035);
       if (k % 2 === 0) this.addTorch(pillar.position.x, h, pillar.position.z, theme);
       else {
         const cap = new THREE.Mesh(new THREE.BoxGeometry(0.62, 0.14, 0.62), pillarMat);
         cap.position.set(pillar.position.x, h + 0.07, pillar.position.z);
         cap.castShadow = true;
         this.world.add(cap);
+        inked(cap, 0.03);
       }
     });
     // Scattered rocks
-    const rockMat = new THREE.MeshStandardMaterial({ color: new THREE.Color(theme.ground).multiplyScalar(1.3), roughness: 1, flatShading: true });
+    const rockMat = toon(new THREE.Color(theme.ground).multiplyScalar(1.3), { flatShading: true });
     for (let k = 0; k < 26; k++) {
       const r = new THREE.Mesh(new THREE.DodecahedronGeometry(0.12 + ((k * 13) % 7) / 30, 0), rockMat);
       const ang = k * 2.4, rad = Math.max(w, d) / 2 + 2 + (k % 5);
@@ -430,7 +472,7 @@ export class BoardView {
   }
 
   addTorch(x, y, z, theme) {
-    const bowl = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.12, 0.16, 8), new THREE.MeshStandardMaterial({ color: 0x3a2a20 }));
+    const bowl = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.12, 0.16, 8), toon(0x3a2a20));
     bowl.position.set(x, y + 0.08, z);
     this.world.add(bowl);
     const flame = new THREE.Sprite(new THREE.SpriteMaterial({ map: this.glowTex(), color: theme.accent, transparent: true, blending: THREE.AdditiveBlending, depthWrite: false }));

@@ -89,13 +89,13 @@ button { font-family: inherit; }
 .card.char .c-stat b { position: relative; font-family: var(--cardfont); font-weight: normal; color: #e9fbff; font-size: 9cqw; text-shadow: 0 0 3px #1a1206, 0 2px 0 #1a1206, 2px 0 0 #1a1206, -2px 0 0 #1a1206; }
 .card.char .c-atk { left: 18%; } .card.char .c-hp { left: 59%; }
 .card.char .c-atk b { margin-top: -18%; }
-.card.pet .c-pettext { position: absolute; left: 12%; right: 12%; top: 82%; font-family: var(--cardfont); color: #e9fbff; font-size: 5.6cqw; line-height: 1.15; text-shadow: 0 1px 0 #1a1206; }
+.card.pet .c-pettext { position: absolute; left: 17%; right: 17%; top: 81.5%; text-align: center; font-family: var(--cardfont); color: #e9fbff; font-size: 5.6cqw; line-height: 1.15; text-shadow: 0 1px 0 #1a1206; }
 .card.text .c-title, .card.back .c-title { position: absolute; left: 16.7%; top: 11%; right: 6%; height: 14.7%; display: flex; align-items: center; }
 .card .c-letter { position: relative; width: 33cqw; height: 100%; flex: none; display: grid; place-items: center; }
 .card .c-letter img { position: absolute; inset: 0; width: 100%; height: 100%; }
 .card .c-letter i { position: relative; font-style: normal; font-family: var(--title); color: var(--brown); font-size: 15cqw; line-height: 1; }
 .card .c-rest { font-family: var(--title); color: var(--olive); font-size: 11cqw; line-height: .95; margin-left: 2cqw; letter-spacing: .2cqw; white-space: normal; flex: 1; min-width: 0; }
-.card.text .c-body { position: absolute; left: 16.5%; right: 14%; top: 29%; bottom: 24%; font-family: var(--cardfont); color: #fff; font-size: 6.3cqw; line-height: 1.18; overflow: hidden; }
+.card.text .c-body { position: absolute; left: 17%; right: 17%; text-align: center; top: 29%; bottom: 24%; font-family: var(--cardfont); color: #fff; font-size: 6.3cqw; line-height: 1.18; overflow: hidden; }
 .card.text .c-body p { margin: 0 0 .35em; }
 .card .c-die { position: absolute; left: 62%; top: 76%; width: 21%; }
 .card .c-foot { position: absolute; left: 17%; top: 80%; font-family: var(--title); color: var(--olive); font-size: 6.5cqw; letter-spacing: .3cqw; }
@@ -180,7 +180,7 @@ body.prompting #bottom { z-index: 45; }
 #handBtn b { color: var(--gold); font-size: 15px; }
 .hb-cards { position: relative; width: 34px; height: 30px; }
 .hb-cards i { position: absolute; left: calc(var(--i) * 7px); top: 2px; width: 18px; height: 26px; border-radius: 3px; background: linear-gradient(#a39b00, #6f6900); border: 1px solid #f2e88a; transform: rotate(calc((var(--i) - 1) * 10deg)); }
-body.prompting #handBtn { display: none; }
+body.prompting #handBtn, body.rolling #handBtn, body.rolling #ticker { display: none; }
 
 #combat { position: absolute; top: calc(var(--st) + 130px); left: 50%; transform: translateX(-50%); display: flex; align-items: center; gap: 8px; background: var(--panel); border: 2px solid var(--red); border-radius: 16px; padding: 8px 10px; }
 #combat .vs { font-family: var(--title); font-size: 26px; color: var(--red); }
@@ -201,11 +201,11 @@ body.prompting #handBtn { display: none; }
 #log { position: absolute; right: 0; top: 0; bottom: 0; width: min(380px, 100vw); pointer-events: auto; background: rgba(14,10,22,.97); border-left: 2px solid var(--line); display: flex; flex-direction: column; z-index: 6; padding-top: var(--st); padding-bottom: var(--sb); }
 #log header { display: flex; justify-content: space-between; align-items: center; padding: 10px 12px; font-family: var(--title); font-size: 20px; color: var(--gold); }
 #logList { overflow-y: auto; padding: 0 14px 20px; font: 600 13px/1.4 var(--ui); -webkit-overflow-scrolling: touch; }
-#logList div { padding: 3px 0; border-bottom: 1px solid rgba(255,255,255,.05); color: #d8cfe6; }
-#logList .dmg { color: #ff9a9a; } #logList .heal { color: #8dffb0; } #logList .loot { color: #ffe27a; }
-#logList .big, #logList .victory { color: var(--gold); font-weight: 800; } #logList .death { color: #ff5a5f; font-weight: 800; }
-#logList .floor { color: #fff; font-family: var(--title); font-size: 15px; padding: 8px 0 4px; }
-#logList .trap { color: #6affc0; } #logList .boss { color: #d9a0ff; font-weight: 800; } #logList .pvp { color: #ffb070; } #logList .guild { color: #8ad8ff; } #logList .skill { color: #ffe066; }
+#logList > div { padding: 4px 0; margin: 0; width: auto; height: auto; border-bottom: 1px solid rgba(255,255,255,.05); color: #d8cfe6; }
+#logList .lg-dmg { color: #ff9a9a; } #logList .lg-heal { color: #8dffb0; } #logList .lg-loot { color: #ffe27a; }
+#logList .lg-big, #logList .lg-victory { color: var(--gold); font-weight: 800; } #logList .lg-death { color: #ff5a5f; font-weight: 800; }
+#logList .lg-floor { color: #fff; font-family: var(--title); font-size: 15px; padding: 8px 0 4px; }
+#logList .lg-trap { color: #6affc0; } #logList .lg-boss { color: #d9a0ff; font-weight: 800; } #logList .lg-pvp { color: #ffb070; } #logList .lg-guild { color: #8ad8ff; } #logList .lg-skill { color: #ffe066; }
 
 #modal { position: fixed; inset: 0; background: rgba(6,4,10,.82); display: grid; place-items: center; z-index: 60; padding: calc(env(safe-area-inset-top, 0px) + 12px) 12px calc(env(safe-area-inset-bottom, 0px) + 12px); backdrop-filter: blur(4px); -webkit-backdrop-filter: blur(4px); }
 .modal-card { width: min(920px, 100%); background: linear-gradient(#2a2038, #1a1426); border: 2px solid var(--line); border-radius: 22px; padding: 16px; max-height: 100%; overflow-y: auto; position: relative; -webkit-overflow-scrolling: touch; animation: pop .22s cubic-bezier(.2,1.4,.4,1); }
@@ -261,3 +261,9 @@ body.prompting #handBtn { display: none; }
 
 /* ---------- mobile (legacy title/setup only) ---------- */
 @media (max-width: 760px) { .title-heroes img { max-height: 210px; } }
+
+.ico { width: 1.15em; height: 1.15em; vertical-align: -0.2em; display: inline-block; }
+.icon-btn .ico { width: 22px; height: 22px; }
+.pchip .row i { display: inline-flex; align-items: center; gap: 1px; }
+.pchip .row .ico { width: 13px; height: 13px; }
+.pchip .gemcount, .pchip .cc { display: inline-flex; align-items: center; gap: 2px; }

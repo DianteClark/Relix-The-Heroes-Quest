@@ -48,7 +48,7 @@ export const heroBack = (id) => textCard({ title: 'Hero', lines: heroDef(id).ski
 export const treasureCard = (id, cls = '') => {
   const d = treasureDef(id);
   if (d.kind === 'pet') {
-    const art = { pet_golem: 'golem_2', pet_tezuki: 'kitsune_3', pet_kezz: 'goblin_3' }[id];
+    const art = { pet_golem: 'golem_1', pet_tezuki: 'kitsune_3', pet_kezz: 'goblin_3' }[id];
     return `<div class="card char pet ${cls}">
       <img class="c-frame" src="assets/ui/frame_char.webp" alt="">
       <div class="c-art"><img src="assets/chars/${art}.webp" alt=""></div>

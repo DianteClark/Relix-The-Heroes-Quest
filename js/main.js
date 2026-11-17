@@ -8,6 +8,7 @@ import { heroFront, heroBack, treasureCard, bossFront, bossBack, charCard } from
 import { Flow } from './flow.js';
 import { haptics } from './haptics.js';
 import { SEAT_BANNERS, DEFAULT_BANNER } from './cosmetics.js';
+import { ICON } from './icons.js';
 
 const $ = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => [...r.querySelectorAll(s)];
@@ -65,6 +66,8 @@ function show(id) {
 }
 // The action bar lives on <body> so prompts can rise above battle scenes.
 document.body.appendChild($('#bottom'));
+$('#btnMenu').innerHTML = ICON.menu;
+$('#btnLogClose').innerHTML = ICON.close;
 
 // ---------------- Menus ----------------
 let legacy = null;
@@ -81,7 +84,7 @@ function backToTitle() {
 
 // ---------------- Modal ----------------
 function openModal(html) {
-  $('#modalBody').innerHTML = `<button class="icon-btn close" data-close aria-label="Close">✕</button>${html}`;
+  $('#modalBody').innerHTML = `<button class="icon-btn close" data-close aria-label="Close">${ICON.close}</button>${html}`;
   $('#modal').classList.remove('hidden');
   $$('[data-close]', $('#modal')).forEach((b) => onTap(b, closeModal));
   sfx('open');
@@ -95,6 +98,9 @@ const cos = {}; // per-player cosmetics
 const ui = { combat: null, hudQueued: false };
 
 function startGame(config) {
+  // Warm the image cache so fighters and cards never pop in late.
+  ['chan_kong','josue','luke','nowtna','shi','yessi','skeleton_warrior','trov','dragonkin','brevha','ikias_monster','skeleton_general','vore','raskon','enguxi','ikias_boss','golem_1','golem_2','kitsune_1','kitsune_2','kitsune_3','goblin_1','goblin_2','goblin_3']
+    .forEach((a) => { const im = new Image(); im.decoding = 'async'; im.src = artUrl(a); (window.__relixArt ||= []).push(im); });
   show('game');
   $('#logList').innerHTML = '';
   const prof = profile();
@@ -114,7 +120,7 @@ function startGame(config) {
   }
   if (!flow) flow = new Flow({ sfx, haptics, speed: () => game?.speed ?? 1 });
   if (!tray && mods.dice?.DiceTray) tray = new mods.dice.DiceTray();
-  if (!battle && mods.battle?.BattleScene) battle = new mods.battle.BattleScene();
+  if (!battle && mods.battle?.BattleScene) { battle = new mods.battle.BattleScene(); window.relixBattle = battle; }
   game = new Game(config, io);
   window.relix = game;
   if (battle) battle.speed = game.speed;
@@ -137,29 +143,24 @@ function foe(e) { return { id: e.id, name: e.name, art: e.art, hp: e.hp, maxHp: 
 const io = {
   log(msg, cls = '') {
     const d = document.createElement('div');
-    d.className = cls;
+    d.className = cls ? 'lg-' + cls : '';
     d.textContent = msg;
     const list = $('#logList');
     list.appendChild(d);
     if (list.children.length > 400) list.firstChild.remove();
     list.scrollTop = list.scrollHeight;
-    $('#ticker').textContent = msg.replace(/[☠★⚔]/g, '').trim();
+    $('#ticker').textContent = msg;
   },
   event(type, data) { onEvent(type, data); },
   pause(ms) { return sleep(ms); },
   async dice(p, values, label, opts = {}) {
     const kind = opts.combat ? 'combat' : opts.skill ? 'skill' : opts.pvp ? 'pvp' : 'move';
     if (tray) {
-      const prof = profile();
-      const swipe = !p.isBot && prof.settings?.swipeDice !== false && game.speed >= 0.05;
-      await tray.roll({
-        values, kind, mode: swipe ? 'swipe' : 'auto', label: `${p.name} · ${label}`,
-        triggers: opts.skill ? heroDef(p.hero).triggers : undefined,
-        skin: cos[p.id]?.dice || 'bone', throwFx: cos[p.id]?.throwFx || 'dust',
-        area: battle?.isOpen ? battle.diceArea() : undefined, speed: p.isBot ? game.speed : Math.max(game.speed, 0.6),
-        reducedMotion: !!profile().settings?.reducedMotion,
-      });
-    } else await legacyDice(p, values, label, opts);
+      document.body.classList.add('rolling');
+      try { await rollTray(p, values, label, opts, kind); } finally { document.body.classList.remove('rolling'); }
+      return;
+    }
+    await legacyDice(p, values, label, opts);
   },
   choose(p, req) { return humanChoose(p, req); },
   async nameGuild(p, suggested) {
@@ -174,6 +175,18 @@ const io = {
   },
   async show(type, d) { return showBeat(type, d); },
 };
+
+async function rollTray(p, values, label, opts, kind) {
+  const prof = profile();
+  const swipe = !p.isBot && prof.settings?.swipeDice !== false && game.speed >= 0.05;
+  await tray.roll({
+    values, kind, mode: swipe ? 'swipe' : 'auto', label: battle?.isOpen ? '' : `${p.name} · ${label}`,
+    triggers: opts.skill ? heroDef(p.hero).triggers : undefined,
+    skin: cos[p.id]?.dice || 'bone', throwFx: cos[p.id]?.throwFx || 'dust',
+    area: battle?.isOpen ? battle.diceArea() : undefined, speed: p.isBot ? game.speed : Math.max(game.speed, 0.6),
+    reducedMotion: !!prof.settings?.reducedMotion,
+  });
+}
 
 async function showBeat(type, d) {
   const p = d.player != null ? game.players[d.player] : null;
@@ -237,7 +250,7 @@ async function showBeat(type, d) {
       try { if (!game.boss.defeated) audio.music('floor' + game.floor); } catch { /* ignore */ }
       return;
     case 'pvpStart': {
-      if (!battle) return flow.banner('⚔ PvP!', 'red');
+      if (!battle) return flow.banner('PvP!', 'red');
       const mover = game.players[d.mover];
       const other = d.sides.flat().map((id) => game.players[id]).find((q) => q !== mover && !game.sameGuild(q, mover));
       ui.pvpLeft = mover.id; ui.pvpRight = other.id;
@@ -334,15 +347,15 @@ function renderHud() {
     const p = game.players[id];
     const g = game.guildOf(p);
     const st = [];
-    if (p.skip) st.push(`<i title="Skipping turns">⏳${p.skip}</i>`);
-    if (p.fx.letDown) st.push('<i title="Let Down">💔</i>');
-    if (p.fx.skillBlocked) st.push('<i title="Skill blocked">🚫</i>');
-    if (p.fx.doubleBattle) st.push('<i title="Double Battle">⚔</i>');
+    if (p.skip) st.push(`<i title="Skipping turns">${ICON.hourglass}${p.skip}</i>`);
+    if (p.fx.letDown) st.push(`<i title="Let Down">${ICON.heartbreak}</i>`);
+    if (p.fx.skillBlocked) st.push(`<i title="Skill blocked">${ICON.blocked}</i>`);
+    if (p.fx.doubleBattle) st.push(`<i title="Double Battle">${ICON.swords}</i>`);
     return `<button class="pchip ${game.current === p ? 'turn' : ''} ${!game.active(p) ? 'out' : ''} ${g ? 'guild' : ''}" data-pid="${p.id}" style="${g ? `--gcol:${g.color}` : ''}">
       <span class="ph" style="background-image:url(${artUrl(heroDef(p.hero).art)})">${g ? `<span class="gflag">${bannerImg(g.banner || { field: g.color })}</span>` : ''}</span>
       <span class="pc-body"><span class="nm">${esc(p.name)}${p.isBot ? '<em>BOT</em>' : ''}</span>
       <span class="bar hp ${hpClass(p)}"><i style="width:${(100 * p.hp) / p.maxHp}%"></i><b>${p.dead ? '—' : p.out ? 'OUT' : p.hp}</b></span>
-      <span class="row"><span class="gemcount">◆${p.relics.length}</span><span class="cc">🂠${p.hand.length}</span>${st.join('')}</span></span></button>`;
+      <span class="row"><span class="gemcount">${ICON.gem}${p.relics.length}</span><span class="cc">${ICON.card}${p.hand.length}</span>${st.join('')}</span></span></button>`;
   }).join('');
   const html = bossHtml + '|' + chips;
   if (html !== lastHud) {

@@ -189,7 +189,7 @@ export class Game {
     const relics = [...p.relics];
     p.hand = []; p.equipped = []; p.relics = [];
     const where = p.pos;
-    this.log(`☠ ${p.name} has died${ctx.from ? ' to ' + ctx.from : ''}!`, 'death');
+    this.log(`${p.name} has died${ctx.from ? ' to ' + ctx.from : ''}!`, 'death');
     if (this.inCombat === p.id) await this.show('defeat', { side: 'hero', player: p.id });
 
     if (cause === 'player' && killer && killer !== p && this.active(killer)) {
@@ -473,7 +473,7 @@ export class Game {
       this.spend(p, card.uid);
       await this.moveTo(p, q.pos, 'warp');
       this.log(`${p.name} springs the trap on ${q.name}!`, 'big');
-      await this.springTrap(q, q.pos, { tricked: true }, this.lifeOf(q));
+      await this.springTrap(q, q.pos, { tricked: true, killer: p }, this.lifeOf(q));
       return true;
     }
     if (id === 'fast_travel') {
@@ -609,12 +609,14 @@ export class Game {
     this.emit('trap', { player: p.id, card });
     await this.show('trapReveal', { player: p.id, card });
     this.traps.toss(card);
-    await this.applyTrap(p, card.id, at, alive);
+    await this.applyTrap(p, card.id, at, alive, opts.killer || null);
   }
 
-  async applyTrap(p, id, at, alive) {
+  // killer: set when another player sprang this trap on you (Trickster). A death then counts as a player kill.
+  async applyTrap(p, id, at, alive, killer = null) {
+    const cause = killer ? 'player' : 'trap';
     const dmg = { giant_boulder: 25, boulder: 10, spike_trap: 5, poison_dart: 3 }[id];
-    if (dmg) { await this.hurt(p, dmg, 'trap', null, { from: trapDef(id).name }); return; }
+    if (dmg) { await this.hurt(p, dmg, cause, killer, { from: trapDef(id).name }); return; }
     switch (id) {
       case 'roar': {
         const cards = [...p.hand, ...p.equipped];
@@ -629,10 +631,10 @@ export class Game {
         const t = this.tile(at);
         const hit = this.living().filter((q) => { const u = this.tile(q.pos); return u.z === t.z && Math.abs(u.x - t.x) <= 1 && q.pos !== this.bossIdx && q.pos !== 0; });
         this.emit('fx', { kind: 'slide', at });
-        for (const q of hit) await this.hurt(q, 15, 'trap', null, { from: 'Land Slide' });
+        for (const q of hit) await this.hurt(q, 15, killer && q !== killer ? 'player' : 'trap', killer && q !== killer ? killer : null, { from: 'Land Slide' });
         break;
       }
-      case 'endless_pit': await this.kill(p, 'trap', null, { from: 'the Endless Pit' }); break;
+      case 'endless_pit': await this.kill(p, cause, killer, { from: 'the Endless Pit' }); break;
       case 'restart': await this.moveTo(p, 0, 'warp'); break;
       case 'skill_counter': p.fx.skillBlocked = true; break;
       case 'double_battle': p.fx.doubleBattle = true; break;
@@ -824,6 +826,18 @@ export class Game {
         }
       }
     }
+    // Five of a kind against a boss: instant kill, whatever the number.
+    if (enemy.kind === 'boss' && values.length === 5 && values.every((v) => v === values[0])) {
+      this.log(`FIVE OF A KIND! ${p.name} rolls five ${values[0]}s and slays ${enemy.name} outright!`, 'victory');
+      this.stats.fiveKind = (this.stats.fiveKind || 0) + 1;
+      await this.show('skill', { player: p.id, text: 'FIVE OF A KIND! INSTANT KILL' });
+      await this.show('exchange', { player: p.id, enemy, dealt: enemy.hp, taken: 0, crits: 5, cmiss: 0, hits: 5, values, kills: true });
+      const dealt = enemy.hp;
+      enemy.hp = 0;
+      this.boss.hp = 0;
+      this.emit('enemy', { hp: 0, dealt });
+      return;
+    }
     const atk = heroDef(p.hero).atk;
     const hits = values.filter((v) => v >= 4).length;
     const crits = values.filter((v) => v === 6).length, cmiss = values.filter((v) => v === 1).length;
@@ -956,7 +970,7 @@ export class Game {
     p.relics.push(relic);
     p.hand.push(...b.pile.cards);
     p.relics.push(...b.pile.relics);
-    this.log(`★ ${p.name} lands the killing blow on ${b.def.name} and claims the ${relic.name}! ★`, 'victory');
+    this.log(`${p.name} lands the killing blow on ${b.def.name} and claims the ${relic.name}!`, 'victory');
     if (b.pile.cards.length || b.pile.relics.length) this.log(`${p.name} also collects everything in the Boss Room: ${b.pile.cards.length} treasure(s), ${b.pile.relics.length} extra Relic(s).`, 'loot');
     b.pile = { cards: [], relics: [] };
     // Anything still lying on the floor's tiles is swept up by the boss slayer, so nothing is lost when the board resets.
@@ -1009,7 +1023,7 @@ export class Game {
     const sides = [...sideMap.values()];
     if (sides.length < 2) return;
     this.stats.pvp++;
-    this.log(`⚔ PvP on this tile: ${sides.map((s) => s.members.map((q) => q.name).join(' + ')).join(' vs ')}!`, 'pvp');
+    this.log(`PvP on this tile: ${sides.map((s) => s.members.map((q) => q.name).join(' + ')).join(' vs ')}!`, 'pvp');
     this.emit('pvp', { at, players: here.map((q) => q.id) });
     await this.show('pvpStart', { at, mover: mover.id, sides: sides.map((x) => x.members.map((q) => q.id)) });
 
