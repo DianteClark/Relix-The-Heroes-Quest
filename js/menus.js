@@ -1,7 +1,8 @@
 // Relix menus: title, party setup, customize, shop, settings, how to play, card gallery.
 //
 //   initMenus({ startGame, audio, haptics? })  → takes over #title and #setup, creates the other screens
-//   showMenu(id)   id: 'title' | 'setup' | 'customize' | 'shop' | 'settings' | 'howto' | 'gallery'
+//   showMenu(id)   id: 'title' | 'setup' | 'customize' | 'shop' | 'settings' | 'howto' | 'gallery' | 'trophies'
+//   celebrateRewards(result)  plays level-up celebrations for an awardGame() result (Promise)
 //   handleBack()   → true if a menu layer was closed (for a native/hardware back button)
 //   onTap(root, selector, fn)  robust delegated tap handler (shared with guildui.js)
 //
@@ -11,11 +12,13 @@
 
 import { HEROES, MONSTERS, BOSSES, TREASURES, TRAPS, MODES, heroDef, sumCounts } from './data.js';
 import { heroFront, heroBack, treasureCard, trapCard, monsterCard, bossFront, bossBack, cardBack } from './cards.js';
-import { BANNER_COLORS, BANNER_PATTERNS, BANNER_EMBLEMS, DICE_SKINS, THROW_FX, KILL_FX, SEAT_BANNERS, byId } from './cosmetics.js';
-import { loadProfile, saveProfile, buy, owns, itemKey, resetProfile } from './profile.js';
+import { BANNER_COLORS, BANNER_PATTERNS, BANNER_EMBLEMS, DICE_SKINS, THROW_FX, KILL_FX, SEAT_BANNERS, BUNDLES, byId } from './cosmetics.js';
+import { loadProfile, saveProfile, buy, owns, itemKey, resetProfile, levelInfo, itemOf, dailyStatus, claimDaily, takePending, achievementProgress,
+  featuredOffers, buyOffer, bundleOffer, buyBundle } from './profile.js';
+import { ACHIEVEMENTS, LEVEL_ITEMS, levelCoins, MAX_LEVEL } from './progression.js';
 import { drawBanner, animateBanner, bannerFontsReady } from './banner.js';
 
-const VERSION = 'v0.2';
+const VERSION = 'v0.3';
 const $ = (s, r = document) => r.querySelector(s);
 const $$ = (s, r = document) => [...r.querySelectorAll(s)];
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
@@ -85,6 +88,7 @@ export function onTap(root, selector, fn) {
 
 // ---------------------------------------------------------------- icons
 const I = {
+  trophy: '<svg viewBox="0 0 24 24"><path fill="currentColor" d="M6 3h12v2h3v2.5c0 3-2.2 5.3-5 5.6-.7 1.5-1.9 2.6-3.4 2.9V19h3.4v2.5H7.6V19H11v-3c-1.5-.3-2.7-1.4-3.4-2.9-2.8-.3-5-2.6-5-5.6V5h3zm0 4.3H4.9v.2c0 1.6 1 3 2.4 3.4A7 7 0 0 1 6 7.3zm12 0c0 1.3-.4 2.6-1.3 3.6 1.4-.4 2.4-1.8 2.4-3.4v-.2z"/></svg>',
   back: '<svg viewBox="0 0 24 24"><path d="M15 4 7 12l8 8" fill="none" stroke="currentColor" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round"/></svg>',
   close: '<svg viewBox="0 0 24 24"><path d="M6 6l12 12M18 6 6 18" fill="none" stroke="currentColor" stroke-width="3.2" stroke-linecap="round"/></svg>',
   gear: '<svg viewBox="0 0 24 24"><path fill="currentColor" fill-rule="evenodd" d="M10.3 2h3.4l.5 2.6 1.9.8 2.2-1.5 2.4 2.4-1.5 2.2.8 1.9 2.6.5v3.4l-2.6.5-.8 1.9 1.5 2.2-2.4 2.4-2.2-1.5-1.9.8-.5 2.6h-3.4l-.5-2.6-1.9-.8-2.2 1.5-2.4-2.4 1.5-2.2-.8-1.9L2 13.7v-3.4l2.6-.5.8-1.9-1.5-2.2 2.4-2.4 2.2 1.5 1.9-.8zM12 8.3a3.7 3.7 0 1 0 0 7.4 3.7 3.7 0 1 0 0-7.4z"/></svg>',
@@ -101,6 +105,33 @@ const I = {
   off: '<svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="8" fill="none" stroke="currentColor" stroke-width="2.6"/><path d="M6.5 17.5l11-11" stroke="currentColor" stroke-width="2.6"/></svg>',
   shuffle: '<svg viewBox="0 0 24 24"><path d="M3 7h3.5c4.5 0 6.5 10 11 10H21M3 17h3.5c1.8 0 3.1-1.6 4.2-3.6M21 7h-3.5c-1.8 0-3.1 1.6-4.2 3.6M18 4l3 3-3 3M18 14l3 3-3 3" fill="none" stroke="currentColor" stroke-width="2.3" stroke-linecap="round" stroke-linejoin="round"/></svg>',
 };
+const AK = 'stroke="#140c1e" stroke-width="3.2" stroke-linejoin="round" stroke-linecap="round"';
+const ACH_ICON = {
+  gate: `<svg viewBox="0 0 40 40"><path d="M6 36V18a14 14 0 0 1 28 0v18z" fill="#aef0d4" ${AK}/><path d="M12 36V19a8 8 0 0 1 16 0v17z" fill="#3a2a5a" ${AK}/><path d="M16 36v-8M20 36v-9M24 36v-8" stroke="#a294d8" stroke-width="2.4"/></svg>`,
+  crown: `<svg viewBox="0 0 40 40"><path d="M5 30L3 11l9 8 8-13 8 13 9-8-2 19z" fill="#ffd23f" ${AK}/><rect x="5" y="29" width="30" height="6" rx="2" fill="#f2a824" ${AK}/><circle cx="20" cy="22" r="3" fill="#e8304a" ${AK}/></svg>`,
+  gem: `<svg viewBox="0 0 40 40"><path d="M11 6h18l8 10-17 20L3 16z" fill="#b06aff" ${AK}/><path d="M3 16h34M15 16l5 20 5-20M11 6l4 10 5-10 5 10 4-10" fill="none" ${AK} stroke-width="2.2"/><path d="M13 9l2 5" stroke="#fff" stroke-width="2.4" stroke-linecap="round"/></svg>`,
+  skull: `<svg viewBox="0 0 40 40"><path d="M20 4C11 4 6 10 6 18c0 5 3 8 6 9v6h16v-6c3-1 6-4 6-9 0-8-5-14-14-14z" fill="#fff6e2" ${AK}/><ellipse cx="14.5" cy="18" rx="3.6" ry="4" fill="#140c1e"/><ellipse cx="25.5" cy="18" rx="3.6" ry="4" fill="#140c1e"/><path d="M20 23l-2 3h4z" fill="#140c1e"/><path d="M16 30v3M20 30v3M24 30v3" stroke="#140c1e" stroke-width="2"/></svg>`,
+  dice: `<svg viewBox="0 0 40 40"><rect x="5" y="5" width="30" height="30" rx="7" fill="#fff6e2" ${AK} transform="rotate(-8 20 20)"/><g fill="#140c1e"><circle cx="13" cy="14" r="2.6"/><circle cx="27" cy="12" r="2.6"/><circle cx="20" cy="20" r="2.6"/><circle cx="13" cy="28" r="2.6"/><circle cx="27" cy="26" r="2.6"/></g></svg>`,
+  sword: `<svg viewBox="0 0 40 40"><path d="M30 3h7v7L17 30l-7-7z" fill="#e8f0ff" ${AK}/><path d="M8 20l12 12M12 28l-6 6" fill="none" ${AK} stroke-width="5"/><path d="M8 20l12 12" stroke="#ffd23f" stroke-width="2.6"/><path d="M12 28l-6 6" stroke="#a0602a" stroke-width="2.4"/></svg>`,
+  fist: `<svg viewBox="0 0 40 40"><rect x="7" y="12" width="26" height="20" rx="7" fill="#ffc89a" ${AK}/><path d="M13 12v8M20 12v8M27 12v8" ${AK} stroke-width="2.4"/><path d="M8 24c6-3 12-2 15 1" fill="none" ${AK} stroke-width="2.6"/><rect x="11" y="31" width="18" height="6" rx="2" fill="#e8304a" ${AK}/></svg>`,
+  heart: `<svg viewBox="0 0 40 40"><path d="M20 35S4 25 4 14a8 8 0 0 1 16-3 8 8 0 0 1 16 3c0 11-16 21-16 21z" fill="#ff3a5a" ${AK}/><path d="M10 13a4 4 0 0 1 4-4" stroke="#fff" stroke-width="2.6" stroke-linecap="round"/><text x="20" y="25" text-anchor="middle" font-family="Luckiest Guy" font-size="12" fill="#fff" stroke="#140c1e" stroke-width="3" paint-order="stroke">1</text></svg>`,
+  pit: `<svg viewBox="0 0 40 40"><ellipse cx="20" cy="25" rx="17" ry="9" fill="#8ab8b0" ${AK}/><ellipse cx="20" cy="24" rx="12" ry="5.6" fill="#120a24" ${AK}/><path d="M17 4l5 2-1 5-5-1z" fill="#b8e8d8" ${AK} stroke-width="2.4"/></svg>`,
+  paw: `<svg viewBox="0 0 40 40"><ellipse cx="20" cy="26" rx="9" ry="8" fill="#ff9a2a" ${AK}/><circle cx="9" cy="16" r="4" fill="#ff9a2a" ${AK}/><circle cx="16" cy="9" r="4" fill="#ff9a2a" ${AK}/><circle cx="24" cy="9" r="4" fill="#ff9a2a" ${AK}/><circle cx="31" cy="16" r="4" fill="#ff9a2a" ${AK}/></svg>`,
+  banner: `<svg viewBox="0 0 40 40"><path d="M9 7h22v28l-11-6-11 6z" fill="#e8304a" ${AK}/><path d="M5 6h30" ${AK} stroke-width="4"/><path d="M15 18l5-6 5 6-5 5z" fill="#ffd23f" ${AK} stroke-width="2.4"/></svg>`,
+  bag: `<svg viewBox="0 0 40 40"><path d="M14 12C6 18 4 26 6 31c2 6 26 6 28 0 2-5 0-13-8-19z" fill="#c88a4a" ${AK}/><path d="M14 12c-2-5 3-7 4-4 1-4 5-4 5 0 2-3 5-1 3 4z" fill="#c88a4a" ${AK}/><circle cx="20" cy="24" r="5" fill="#ffd23f" ${AK} stroke-width="2.4"/></svg>`,
+  shield: `<svg viewBox="0 0 40 40"><path d="M20 4l14 5c0 13-5 21-14 27C11 30 6 22 6 9z" fill="#4a8cff" ${AK}/><path d="M14 19l4 4 8-8" fill="none" stroke="#fff" stroke-width="3.4" stroke-linecap="round" stroke-linejoin="round"/></svg>`,
+  star: `<svg viewBox="0 0 40 40"><path d="M20 3l5 11 12 1-9 8 3 12-11-6-11 6 3-12-9-8 12-1z" fill="#ffd23f" ${AK}/><path d="M15 15l3-6" stroke="#fff" stroke-width="2.4" stroke-linecap="round"/></svg>`,
+  chest: `<svg viewBox="0 0 40 40"><path d="M5 18h30v15c0 1.5-1 2.5-2.5 2.5h-25C6 35.5 5 34.5 5 33z" fill="#c87a3a" ${AK}/><path d="M5 18v-4c0-5 6-9 15-9s15 4 15 9v4z" fill="#a8642a" ${AK}/><rect x="16" y="15" width="8" height="9" rx="2" fill="#ffd23f" ${AK} stroke-width="2.4"/></svg>`,
+};
+const CHEST_SVG = `<svg class="chest" viewBox="0 0 120 110" aria-hidden="true"><g stroke="#140c1e" stroke-width="5" stroke-linejoin="round" stroke-linecap="round">
+  <g class="chest-glow" stroke="none"><circle cx="60" cy="58" r="52" fill="#fff3a8" opacity=".55"/></g>
+  <path d="M14 56H106V96C106 100 102 104 98 104H22C18 104 14 100 14 96Z" fill="#c87a3a"/>
+  <path d="M14 70H106" fill="none"/><path d="M20 62V98" fill="none" stroke="#f0b070" stroke-width="4" opacity=".7"/>
+  <rect x="28" y="54" width="12" height="50" fill="#ffd23f"/><rect x="80" y="54" width="12" height="50" fill="#ffd23f"/>
+  <g class="chest-lid"><path d="M14 56V44C14 26 32 16 60 16S106 26 106 44V56Z" fill="#a8642a"/><path d="M22 40C24 30 36 24 52 22" fill="none" stroke="#f0b070" stroke-width="4" opacity=".7"/>
+    <path d="M28 56V22M92 56V22" fill="none" stroke="#140c1e"/><path d="M28 56V24H40V56ZM80 56V24H92V56Z" fill="#ffd23f"/></g>
+  <rect x="50" y="48" width="20" height="22" rx="5" fill="#ffd23f"/><circle cx="60" cy="57" r="3.4" fill="#140c1e" stroke="none"/><path d="M60 59V64" stroke-width="3"/>
+</g></svg>`;
 const MODE_ICON = {
   standard: '<svg viewBox="0 0 48 48"><path d="M8 36 5 14l11 9 8-15 8 15 11-9-3 22z" fill="#f2c443" stroke="#2a1a05" stroke-width="2.5" stroke-linejoin="round"/><rect x="8" y="35" width="32" height="6" rx="1.5" fill="#d9a21c" stroke="#2a1a05" stroke-width="2.5"/><circle cx="24" cy="27" r="3.4" fill="#c9302c"/></svg>',
   elimination: '<svg viewBox="0 0 48 48"><path d="M24 5C13 5 7 13 7 22c0 6 3 10 8 12v6c0 1.5 1 2.5 2.5 2.5h13c1.5 0 2.5-1 2.5-2.5v-6c5-2 8-6 8-12 0-9-6-17-17-17z" fill="#f4ecdf" stroke="#2a1a05" stroke-width="2.5"/><ellipse cx="17.5" cy="23" rx="4.6" ry="5.2" fill="#2a1a05"/><ellipse cx="30.5" cy="23" rx="4.6" ry="5.2" fill="#2a1a05"/><path d="M24 29l-3 5h6z" fill="#2a1a05"/><path d="M20 37v5M24 37v5M28 37v5" stroke="#2a1a05" stroke-width="2"/></svg>',
@@ -145,7 +176,7 @@ export function dieHTML(skinId, cls = '') {
 }
 
 // ---------------------------------------------------------------- navigation
-const SCREENS = { title: 'title', setup: 'setup', customize: 'm-customize', shop: 'm-shop', settings: 'm-settings', howto: 'm-howto', gallery: 'm-gallery' };
+const SCREENS = { title: 'title', setup: 'setup', customize: 'm-customize', shop: 'm-shop', settings: 'm-settings', howto: 'm-howto', gallery: 'm-gallery', trophies: 'm-trophies' };
 const ON_SHOW = {};
 let current = null;
 const layers = []; // {kind:'screen', from} | {kind:'overlay', close}
@@ -342,7 +373,7 @@ function buildTitle(el) {
     <div class="t-layer t-rays" data-depth="0.02"></div>
     <canvas class="t-embers"></canvas>
     <div class="t-top">
-      <button class="t-me" data-act="go" data-to="customize" aria-label="Customize banner"><canvas class="t-me-banner"></canvas><span><small>Your banner</small><b class="t-me-name"></b></span></button>
+      <button class="t-me" data-act="go" data-to="trophies" aria-label="Your profile and trophies"><canvas class="t-me-banner"></canvas><span class="t-me-tx"><b class="t-me-name"></b><span class="t-me-xp"><i></i></span><small class="t-me-sub"></small></span><span class="t-lv"></span></button>
       ${coinsPill()}
     </div>
     <div class="t-logo-wrap t-layer" data-depth="-0.01">
@@ -352,6 +383,7 @@ function buildTitle(el) {
     <div class="t-stage">
       <div class="t-scene t-layer" data-depth="0.008"><div class="t-wall"></div>${gateSVG()}</div>
       <div class="t-glow"></div>
+      <button class="t-chest" data-act="daily" aria-label="Daily chest">${CHEST_SVG}<span class="t-chest-tag"></span></button>
       ${LINEUP.map((h, i) => `<div class="t-hero t-${h.row} ${h.hero ? 'lead' : ''} t-layer" data-depth="${h.row === 'front' ? 0.035 : 0.018}" style="--x:${h.x}%;--h:${h.h};--i:${i}">
         <button class="t-hero-btn" data-act="poke" aria-label="${esc(heroDef(h.id).name)}"><img src="${artUrl(heroDef(h.id).art)}" alt="" draggable="false"></button></div>`).join('')}
       ${ledgeSVG()}
@@ -365,6 +397,7 @@ function buildTitle(el) {
       <div class="t-row3">
         <button class="t-tile" data-act="go" data-to="howto"><i>${I.book}</i><span>How to Play</span></button>
         <button class="t-tile" data-act="go" data-to="gallery"><i>${I.cards}</i><span>Cards</span></button>
+        <button class="t-tile" data-act="go" data-to="trophies"><i>${I.trophy}</i><span>Trophies</span></button>
         <button class="t-tile" data-act="go" data-to="settings"><i>${I.gear}</i><span>Settings</span></button>
       </div>
     </nav>
@@ -386,14 +419,41 @@ function buildTitle(el) {
     T.tx = clamp(e.gamma / 30, -1, 1); T.ty = clamp((e.beta - 45) / 30, -1, 1);
   });
   ON_SHOW.title = () => {
-    const p = loadProfile();
-    $('.t-me-name', el).textContent = p.name || p.banner.name || 'Hero';
-    drawBanner($('.t-me-banner', el), p.banner, { w: 34, h: 46 });
+    renderProfileCard();
     refreshCoins();
+    clearTimeout(T.pendT); T.pendT = setTimeout(playPending, 700);
     if (!T.intro) { T.intro = true; el.classList.add('t-intro'); setTimeout(() => el.classList.remove('t-intro'), 2600); }
     startTitleLoop();
   };
 }
+
+// ---- profile card, level ring, daily chest
+const ring = (frac, level, cls = '') => {
+  const C = 2 * Math.PI * 21;
+  return `<svg class="lv-ring ${cls}" viewBox="0 0 54 54" aria-label="Level ${level}"><circle cx="27" cy="27" r="25" fill="#140c1e"/><circle cx="27" cy="27" r="21" fill="none" stroke="#3a2c6e" stroke-width="7"/>
+    <circle cx="27" cy="27" r="21" fill="none" stroke="#ffd23f" stroke-width="7" stroke-linecap="round" stroke-dasharray="${(C * Math.max(0.001, frac)).toFixed(1)} ${C.toFixed(1)}" transform="rotate(-90 27 27)"/>
+    <circle cx="27" cy="27" r="16" fill="url(#lvg)"/><defs><radialGradient id="lvg" cx=".35" cy=".3"><stop offset="0" stop-color="#b4a6ea"/><stop offset="1" stop-color="#5e4f9e"/></radialGradient></defs>
+    <text x="27" y="33.5" text-anchor="middle" font-family="Luckiest Guy, sans-serif" font-size="${level > 9 ? 16 : 19}" fill="#fff" stroke="#140c1e" stroke-width="4" paint-order="stroke">${level}</text></svg>`;
+};
+function renderProfileCard() {
+  const el = elOf('title');
+  const p = loadProfile(), lv = levelInfo();
+  $('.t-me-name', el).textContent = p.name || p.banner.name || 'Hero';
+  $('.t-me-sub', el).textContent = lv.need ? `${lv.into} / ${lv.need} XP` : 'Max level';
+  $('.t-me-xp i', el).style.width = `${Math.round(lv.frac * 100)}%`;
+  $('.t-lv', el).innerHTML = ring(lv.frac, lv.level);
+  drawBanner($('.t-me-banner', el), p.banner, { w: 34, h: 46 });
+  renderChest();
+}
+const fmtTime = (ms) => { const m = Math.max(1, Math.ceil(ms / 60000)); return m >= 60 ? `${Math.floor(m / 60)}h ${m % 60}m` : `${m}m`; };
+function renderChest() {
+  const b = $('.t-chest', elOf('title'));
+  if (!b) return;
+  const st = dailyStatus();
+  b.classList.toggle('ready', st.ready);
+  $('.t-chest-tag', b).textContent = st.ready ? 'Daily chest' : `Next in ${fmtTime(st.nextIn)}`;
+}
+setInterval(() => { if (current === 'title') renderChest(); }, 60000);
 
 function resizeEmbers() {
   const r = Math.min(2, devicePixelRatio || 1);
@@ -863,7 +923,7 @@ function renderCustomize() {
   el.dataset.tab = CZ.tab;
   $$('.cz-tabs button', el).forEach((b) => b.classList.toggle('on', b.dataset.id === CZ.tab));
   const content = $('.cz-content', el);
-  const lockTag = (key, price) => (owns(key) ? '' : `<span class="m-lock">${I.lock}${price}</span>`);
+  const lockTag = (key, price) => (owns(key) ? '' : itemOf(key)?.level ? `<span class="m-lock lv">Lv ${itemOf(key).level}</span>` : `<span class="m-lock">${I.lock}${price}</span>`);
   if (CZ.tab === 'banner') {
     const sw = (field) => `<div class="cz-swatches">${BANNER_COLORS.map((c) => `<button class="cz-sw ${p.banner[field] === c ? 'on' : ''}" style="--c:${c}" data-act="cz-color" data-f="${field}" data-c="${c}" aria-label="${c}"></button>`).join('')}</div>`;
     content.innerHTML = `
@@ -915,6 +975,7 @@ function renderCzBuy() {
   el.classList.toggle('has-buy', !!pv);
   if (!pv) { box.innerHTML = ''; return; }
   const it = byId(LISTS[pv.kind], pv.id);
+  if (it.level) { box.innerHTML = `<div class="cz-buy-in"><div><small>Previewing</small><b>${esc(it.name)}</b></div><button class="m-btn stone" aria-disabled="true" data-act="cz-buy">${I.trophy}<span>Level ${it.level}</span></button></div>`; return; }
   const afford = loadProfile().coins >= it.price;
   box.innerHTML = `<div class="cz-buy-in"><div><small>Previewing</small><b>${esc(it.name)}</b></div>
     <button class="m-btn gold" data-act="cz-buy" ${afford ? '' : 'aria-disabled="true"'}>${I.lock}<span>Unlock</span>${coinHTML(it.price, 'dark')}</button></div>`;
@@ -923,13 +984,16 @@ async function purchase(kind, id, { confirm = true } = {}) {
   const it = byId(LISTS[kind], id), key = itemKey(kind, id);
   const p = loadProfile();
   if (owns(key)) return true;
+  if (it.level) { sfx('error'); toast(`Unlocks at level ${it.level}`, 'bad'); return false; }
   if (p.coins < it.price) {
     sfx('error'); buzz('error');
     toast(`You need ${it.price - p.coins} more coins`, 'bad');
     return false;
   }
   if (confirm) {
-    const ok = await confirmDialog({ title: `Unlock ${it.name}?`, html: `<div class="m-dlg-thumb">${thumbHTML(kind, id)}</div><p>Spend ${coinHTML(it.price)} — you have ${coinHTML(p.coins)}</p>`, ok: `Buy ${coinHTML(it.price, 'dark')}`, cancel: 'Not now' });
+    const pr = confirmDialog({ title: `Unlock ${it.name}?`, html: `<div class="m-dlg-thumb">${thumbHTML(kind, id)}</div><p>Spend ${coinHTML(it.price)} — you have ${coinHTML(p.coins)}</p>`, ok: `Buy ${coinHTML(it.price, 'dark')}`, cancel: 'Not now' });
+    paintThumbs(ovRoot);
+    const ok = await pr;
     if (!ok) return false;
   }
   if (!buy(key, it.price)) { sfx('error'); return false; }
@@ -978,8 +1042,8 @@ async function czItem(kind, id) {
 }
 
 // ================================================================= SHOP
-const SHOP_TABS = [['banners', 'Banners'], ['dice', 'Dice'], ['throw', 'Throw FX'], ['kill', 'Kill FX']];
-const SHOP = { tab: 'banners' };
+const SHOP_TABS = [['featured', 'Featured'], ['banners', 'Banners'], ['dice', 'Dice'], ['throw', 'Throw FX'], ['kill', 'Kill FX']];
+const SHOP = { tab: 'featured' };
 function buildShop() {
   ovRoot.insertAdjacentHTML('beforebegin', screenShell('m-shop', 'Shop', { cls: 'm-shopscr' }));
   const el = elOf('shop');
@@ -994,13 +1058,56 @@ function shopItems() {
   if (SHOP.tab === 'banners') return [...BANNER_PATTERNS.map((x) => ['pattern', x]), ...BANNER_EMBLEMS.map((x) => ['emblem', x])];
   return LISTS[SHOP.tab].map((x) => [SHOP.tab, x]);
 }
+function renderFeatured() {
+  const el = elOf('shop');
+  const p = loadProfile();
+  const { offers, nextIn } = featuredOffers();
+  const offerHTML = offers.length ? offers.map((o) => `<button class="sh-item sh-offer" data-act="sh-offer" data-key="${o.key}">
+      <span class="sh-ribbon">-${Math.round((1 - o.price / o.was) * 100)}%</span>
+      <span class="sh-th">${thumbHTML(o.kind, o.id)}</span><span class="sh-kind">${kindLabel(o.kind)}</span><b>${esc(o.name)}</b>
+      <span class="sh-price ${p.coins < o.price ? 'short' : ''}"><s>${o.was}</s>${coinHTML(o.price, 'dark')}</span></button>`).join('') : '<p class="m-note">You own everything on offer. Check back tomorrow!</p>';
+  const bundles = BUNDLES.map((b) => bundleOffer(b.id)).filter(Boolean).map((o) => `<button class="sh-bundle ${o.owned ? 'have' : ''}" data-act="sh-bundle" data-id="${o.bundle.id}" style="--tint:${o.bundle.tint}">
+      <div class="sb-head"><b>${esc(o.bundle.name)}</b>${o.owned ? `<span class="sh-state eq">${I.check}Owned</span>` : `<span class="sh-price ${p.coins < o.price ? 'short' : ''}"><s>${o.was}</s>${coinHTML(o.price, 'dark')}</span>`}</div>
+      <div class="sb-items">${o.items.map((it) => `<span class="sb-it ${it.owned ? 'own' : ''}"><span class="sb-th">${thumbHTML(it.kind, it.id)}</span><small>${esc(it.name)}</small></span>`).join('')}</div></button>`).join('');
+  $('.sh-grid', el).innerHTML = `<div class="sh-sec"><h3 class="m-h">Today's Offers <small>New in ${fmtTime(nextIn)}</small></h3><div class="sh-offers">${offerHTML}</div></div>
+    <div class="sh-sec"><h3 class="m-h">Bundles</h3><div class="sh-bundles">${bundles}</div></div>`;
+  paintThumbs(el);
+}
+async function buyFeatured(key) {
+  const o = featuredOffers().offers.find((x) => x.key === key);
+  if (!o) return;
+  const p = loadProfile();
+  if (p.coins < o.price) { sfx('error'); buzz('error'); toast(`You need ${o.price - p.coins} more coins`, 'bad'); return; }
+  const pr = confirmDialog({ title: `Unlock ${o.name}?`, html: `<div class="m-dlg-thumb">${thumbHTML(o.kind, o.id)}</div><p>Today only: <s>${o.was}</s> ${coinHTML(o.price)}</p>`, ok: `Buy ${coinHTML(o.price, 'dark')}`, cancel: 'Not now' });
+  paintThumbs(ovRoot);
+  const ok = await pr;
+  if (!ok || !buyOffer(key)) { renderShop(); return; }
+  sfx('coin'); buzz('heavy'); refreshCoins(true);
+  if (await celebrate(o.kind, o.id)) equip(o.kind, o.id);
+  renderShop();
+}
+async function buyBundleFlow(id) {
+  const o = bundleOffer(id);
+  if (!o || o.owned) { sfx('tap'); return; }
+  const p = loadProfile();
+  if (p.coins < o.price) { sfx('error'); buzz('error'); toast(`You need ${o.price - p.coins} more coins`, 'bad'); return; }
+  const pr = confirmDialog({ title: `${o.bundle.name}?`, html: `<div class="m-dlg-thumb sb-dlg">${o.items.filter((it) => !it.owned).map((it) => `<span class="sb-th">${thumbHTML(it.kind, it.id)}</span>`).join('')}</div><p><s>${o.was}</s> ${coinHTML(o.price)} for ${o.items.filter((it) => !it.owned).length} items</p>`, ok: `Buy ${coinHTML(o.price, 'dark')}`, cancel: 'Not now' });
+  paintThumbs(ovRoot);
+  const ok = await pr;
+  if (!ok || !buyBundle(id)) { renderShop(); return; }
+  sfx('coin'); buzz('heavy'); refreshCoins(true);
+  toast(`${o.bundle.name} unlocked!`);
+  renderShop();
+}
 function renderShop() {
   const el = elOf('shop');
   $$('.sh-tabs button', el).forEach((b) => b.classList.toggle('on', b.dataset.id === SHOP.tab));
+  el.dataset.tab = SHOP.tab;
+  if (SHOP.tab === 'featured') { renderFeatured(); return; }
   const p = loadProfile();
   $('.sh-grid', el).innerHTML = shopItems().map(([kind, x]) => {
     const key = itemKey(kind, x.id), have = owns(key), eq = equippedOf(kind) === x.id;
-    const state = eq ? `<span class="sh-state eq">${I.check}Equipped</span>` : have ? `<span class="sh-state own">Owned · Equip</span>` : `<span class="sh-price ${p.coins < x.price ? 'short' : ''}">${coinHTML(x.price, 'dark')}</span>`;
+    const state = eq ? `<span class="sh-state eq">${I.check}Equipped</span>` : have ? `<span class="sh-state own">Owned · Equip</span>` : x.level ? `<span class="sh-state lvl">${I.trophy}Level ${x.level}</span>` : `<span class="sh-price ${p.coins < x.price ? 'short' : ''}">${coinHTML(x.price, 'dark')}</span>`;
     return `<button class="sh-item ${have ? 'have' : ''} ${eq ? 'eq' : ''}" data-act="sh-item" data-kind="${kind}" data-id="${x.id}">
       <span class="sh-th">${thumbHTML(kind, x.id)}</span>
       <span class="sh-kind">${kind === 'pattern' ? 'Pattern' : kind === 'emblem' ? 'Emblem' : kind === 'dice' ? 'Dice' : kind === 'throw' ? 'Throw FX' : 'Kill FX'}</span>
@@ -1019,7 +1126,7 @@ function shopDetail(kind, id) {
     <header class="m-ov-head"><h2>${esc(it.name)}</h2><button class="m-x" data-act="x" aria-label="Close">${I.close}</button></header>
     <div class="dt-stage">${kind === 'dice' ? dieHTML(id, 'spin big') : kind === 'throw' || kind === 'kill' ? '<canvas class="dt-fx"></canvas>' : '<canvas class="dt-banner"></canvas>'}</div>
     <p class="dt-desc">${kind === 'pattern' ? 'Banner pattern, shown in your accent color.' : kind === 'emblem' ? 'Banner emblem, the crest your guild rallies behind.' : kind === 'dice' ? 'Dice skin for every roll you make.' : kind === 'throw' ? 'Trail and landing burst when your dice fly.' : 'Plays when your hero defeats a foe.'}</p>
-    <footer class="m-ov-foot">${eq ? `<button class="m-btn stone big" data-act="x">${I.check} Equipped</button>` : have ? `<button class="m-btn gold big" data-act="dt-equip">Equip</button>` : `<button class="m-btn gold big" data-act="dt-buy" ${afford ? '' : 'aria-disabled="true"'}>Buy ${coinHTML(it.price, 'dark')}</button>${afford ? '' : `<p class="m-note">You need ${it.price - p.coins} more coins.</p>`}`}</footer>
+    <footer class="m-ov-foot">${eq ? `<button class="m-btn stone big" data-act="x">${I.check} Equipped</button>` : !have && it.level ? `<button class="m-btn stone big" aria-disabled="true">${I.trophy}<span>Reach Level ${it.level}</span></button><p class="m-note">A level reward. Keep playing to earn it.</p>` : have ? `<button class="m-btn gold big" data-act="dt-equip">Equip</button>` : `<button class="m-btn gold big" data-act="dt-buy" ${afford ? '' : 'aria-disabled="true"'}>Buy ${coinHTML(it.price, 'dark')}</button>${afford ? '' : `<p class="m-note">You need ${it.price - p.coins} more coins.</p>`}`}</footer>
   </div>`, { onClose: () => { anim?.stop(); if (stage) stage.visible = false; } });
   if (kind === 'throw' || kind === 'kill') { stage = new FxStage($('.dt-fx', el)); stage.set({ mode: kind, fx: id, skin: p.dice }); }
   if (kind === 'pattern' || kind === 'emblem') anim = animateBanner($('.dt-banner', el), () => ({ ...loadProfile().banner, [kind]: id }), { w: 130, h: 186, reduced: reducedMotion });
@@ -1106,6 +1213,137 @@ function buildHowto() {
     <section class="ht-card"><h3><span class="ht-n">5</span>Guilds</h3><p>4+ players only. Play a <b>Guild Banner</b> to invite others (max half the players). Guild members don't fight each other, can reroll each other's failed dice once per battle, and count their Relics together.</p></section>
     <section class="ht-card"><h3>Game Modes</h3>${MODES.map((m) => `<div class="ht-mode"><i>${MODE_ICON[m.id] || ''}</i><div><b>${esc(m.name)}</b><p>${esc(m.text)}</p></div></div>`).join('')}</section>
   </div>`;
+}
+
+// ================================================================= REWARDS: level-ups, daily chest, achievement toasts
+const itemName = (key) => itemOf(key)?.name || key;
+const kindLabel = (kind) => ({ pattern: 'Pattern', emblem: 'Emblem', dice: 'Dice', throw: 'Throw FX', kill: 'Kill FX' }[kind] || '');
+const rewardRow = (coins, items = []) => `<div class="rw-row">${coins ? `<div class="rw-it rw-coins"><i class="m-coin-ic"></i><b>+${coins}</b></div>` : ''}${items.map((k) => { const [kind, id] = k.split(':'); return `<div class="rw-it"><span class="rw-th">${thumbHTML(kind, id)}</span><b>${esc(itemName(k))}</b><small>${kindLabel(kind)}</small></div>`; }).join('')}</div>`;
+
+function levelUpOverlay(up) {
+  return new Promise((resolve) => {
+    const lv = up.level;
+    const { el } = overlay('m-celebrate m-levelup', `<div class="cb-rays"></div><div class="cb-in">
+      <div class="cb-title">Level Up!</div>
+      <div class="lu-badge">${ring(1, lv, 'big')}</div>
+      <div class="cb-name">Level ${lv}</div>
+      ${rewardRow(up.coins, up.items)}
+      <div class="cb-btns"><button class="m-btn gold big" data-act="lu-ok">Awesome!</button></div>
+    </div><div class="cb-confetti">${Array.from({ length: 28 }, (_, i) => `<i style="--a:${(i * 37) % 360}deg;--d:${0.4 + ((i * 7) % 10) / 14}s;--c:${['#ffd23f', '#fff', '#ff3a5a', '#6ad8b0', '#5a8cff', '#b06aff'][i % 6]}"></i>`).join('')}</div>`, { onClose: () => resolve() });
+    paintThumbs(el);
+    sfx('relic'); buzz('heavy');
+    onTap(el, '[data-act]', () => { sfx('tap'); goBack(); });
+  });
+}
+/**
+ * Plays the level-up celebration(s) for an awardGame() result, then refreshes the title card.
+ * Safe to call from the end screen; also clears the queued copy so the title won't replay it.
+ */
+export async function celebrateRewards(result) {
+  takePending();
+  const ups = result?.levelUps || [];
+  // several levels at once: one celebration per level, at most 3, the last one sums the rest
+  const shown = ups.length > 3 ? [...ups.slice(0, 2), ups.slice(2).reduce((a, u) => ({ level: u.level, coins: a.coins + u.coins, items: [...a.items, ...u.items] }), { coins: 0, items: [] })] : ups;
+  for (const up of shown) await levelUpOverlay(up);
+  if (current === 'title') renderProfileCard();
+  refreshCoins(true);
+}
+async function playPending() {
+  if (current !== 'title' || openOverlays.size) return;
+  const q = takePending();
+  const ups = q.flatMap((x) => x.levelUps || []);
+  if (ups.length) await celebrateRewards({ levelUps: ups });
+}
+
+async function openDaily() {
+  const st = dailyStatus();
+  if (!st.ready) { sfx('error'); toast(`Next chest in ${fmtTime(st.nextIn)}`); return; }
+  const days = Array.from({ length: 7 }, (_, i) => { const d = Math.floor((st.streak - 1) / 7) * 7 + i + 1; return `<span class="dc-day ${d < st.streak ? 'done' : d === st.streak ? 'now' : ''} ${d % 7 === 0 ? 'big' : ''}"><b>${d}</b></span>`; }).join('');
+  let res = null;
+  const { el } = overlay('m-celebrate m-daily', `<div class="cb-rays"></div><div class="cb-in">
+    <div class="cb-title dc-title">Daily Chest</div>
+    <p class="dc-streak">Day ${st.streak} streak${st.bonusDay ? ' · bonus item!' : ''}</p>
+    <div class="dc-days">${days}</div>
+    <button class="dc-chest" data-act="dc-open" aria-label="Open the chest">${CHEST_SVG}<span class="dc-burst"></span></button>
+    <p class="dc-hint">Tap the chest to open it</p>
+    <div class="dc-reward"></div>
+    <div class="cb-btns dc-btns"><button class="m-btn gold big" data-act="dc-ok">Collect</button></div>
+  </div>`, { onClose: () => { renderProfileCard(); refreshCoins(!!res); } });
+  onTap(el, '[data-act]', async (b) => {
+    if (b.dataset.act === 'dc-open') {
+      if (res) return;
+      res = claimDaily();
+      if (!res) { goBack(); return; }
+      el.classList.add('opening'); sfx('card_flip'); buzz();
+      await sleep(reducedMotion() ? 0 : 650);
+      el.classList.add('opened'); sfx('coin'); buzz('heavy');
+      $('.dc-reward', el).innerHTML = rewardRow(res.coins, res.items);
+      paintThumbs(el);
+      return;
+    }
+    if (b.dataset.act === 'dc-ok') { sfx('tap'); goBack(); }
+  });
+}
+
+// achievement toasts: slide down from the top, in menus and in game
+const achQueue = [];
+let achBusy = false;
+function achToast(a) {
+  achQueue.push(a);
+  if (achBusy) return;
+  achBusy = true;
+  const next = () => {
+    const x = achQueue.shift();
+    if (!x) { achBusy = false; return; }
+    const t = document.createElement('div');
+    t.className = 'm-ach-toast';
+    t.innerHTML = `<i>${ACH_ICON[x.icon] || ACH_ICON.star}</i><div><small>Achievement unlocked</small><b>${esc(x.name)}</b></div>${x.coins ? `<span class="m-coin"><i class="m-coin-ic"></i><b>+${x.coins}</b></span>` : ''}`;
+    document.body.appendChild(t);
+    requestAnimationFrame(() => t.classList.add('show'));
+    sfx('relic');
+    setTimeout(() => { t.classList.remove('show'); setTimeout(() => { t.remove(); next(); }, 350); }, 2600);
+  };
+  next();
+}
+
+// ================================================================= TROPHIES (profile, level road, achievements)
+function buildTrophies() {
+  ovRoot.insertAdjacentHTML('beforebegin', screenShell('m-trophies', 'Trophies', { cls: 'm-trophyscr' }));
+  ON_SHOW.trophies = renderTrophies;
+}
+function renderTrophies() {
+  const el = elOf('trophies');
+  const p = loadProfile(), lv = levelInfo(), st = p.stats;
+  const done = ACHIEVEMENTS.filter((a) => p.achievements[a.id]).length;
+  const road = [];
+  for (let L = Math.max(2, lv.level - 1); L <= Math.min(MAX_LEVEL, lv.level + 8); L++) {
+    const key = LEVEL_ITEMS[L], got = L <= lv.level;
+    road.push(`<div class="lr-step ${got ? 'got' : ''} ${L === lv.level + 1 ? 'next' : ''}"><span class="lr-lv">${L}</span>
+      <span class="lr-th">${key ? thumbHTML(...key.split(':')) : '<i class="m-coin-ic"></i>'}</span><small>${key ? esc(itemName(key)) : `+${levelCoins(L)}`}</small></div>`);
+  }
+  const list = ACHIEVEMENTS.map((a) => {
+    const pr = achievementProgress(a.id), secret = a.hidden && !pr.done;
+    return `<div class="ac-card ${pr.done ? 'done' : ''}"><i class="ac-ic">${secret ? ACH_ICON.chest : ACH_ICON[a.icon] || ACH_ICON.star}</i>
+      <div class="ac-tx"><b>${secret ? 'Secret' : esc(a.name)}</b><p>${secret ? 'Keep exploring to find this one.' : esc(a.desc)}</p>
+      ${a.goal > 1 && !pr.done ? `<div class="ac-bar"><i style="width:${Math.round((pr.have / pr.goal) * 100)}%"></i><span>${pr.have} / ${pr.goal}</span></div>` : ''}</div>
+      <div class="ac-rw">${pr.done ? `<span class="ac-ok">${I.check}</span>` : `<span class="m-coin"><i class="m-coin-ic"></i><b>${a.coins}</b></span>${a.item ? `<small>+ ${esc(itemName(a.item))}</small>` : ''}`}</div></div>`;
+  }).join('');
+  $('.m-body', el).innerHTML = `<div class="m-wrap">
+    <section class="pf-card">
+      <canvas class="pf-banner"></canvas>
+      <div class="pf-main"><b class="pf-name">${esc(p.name || p.banner.name || 'Hero')}</b>
+        <div class="pf-xp"><i style="width:${Math.round(lv.frac * 100)}%"></i><span>${lv.need ? `${lv.into} / ${lv.need} XP` : 'Max level'}</span></div>
+        <div class="pf-stats"><span><b>${st.games}</b>Games</span><span><b>${st.wins}</b>Wins</span><span><b>${st.relics}</b>Relics</span><span><b>${st.bossKills}</b>Bosses</span></div></div>
+      <div class="pf-ring">${ring(lv.frac, lv.level, 'big')}<small>Level</small></div>
+      <button class="m-btn stone pf-edit" data-act="go" data-to="customize">${I.banner}<span>Customize</span></button>
+    </section>
+    <h3 class="m-h">Level Road</h3>
+    <div class="lr-road">${road.join('')}</div>
+    <h3 class="m-h">Achievements <small>${done} / ${ACHIEVEMENTS.length}</small></h3>
+    <div class="ac-list">${list}</div></div>`;
+  drawBanner($('.pf-banner', el), p.banner, { w: 64, h: 88 });
+  paintThumbs(el);
+  refreshCoins();
 }
 
 // ================================================================= GALLERY
@@ -1223,7 +1461,7 @@ async function act(b) {
     case 'cz-item': czItem(b.dataset.kind, b.dataset.id); break;
     case 'cz-buy': {
       const pv = CZ.preview; if (!pv) break;
-      if (b.getAttribute('aria-disabled') === 'true') { const it = byId(LISTS[pv.kind], pv.id); sfx('error'); buzz('error'); shake(b); toast(`You need ${it.price - loadProfile().coins} more coins`, 'bad'); break; }
+      if (b.getAttribute('aria-disabled') === 'true') { const it = byId(LISTS[pv.kind], pv.id); sfx('error'); buzz('error'); shake(b); toast(it.level ? `Unlocks at level ${it.level}` : `You need ${it.price - loadProfile().coins} more coins`, 'bad'); break; }
       sfx('tap');
       if (await purchase(pv.kind, pv.id)) CZ.preview = null;
       renderCustomize();
@@ -1246,6 +1484,9 @@ async function act(b) {
     }
     case 'ga-tab': GAL.tab = b.dataset.id; sfx('tap'); buzz(); renderGallery(); break;
     case 'zoom': zoomCard(b.dataset.kind, b.dataset.id, b); break;
+    case 'daily': sfx('open'); buzz(); openDaily(); break;
+    case 'sh-offer': sfx('open'); buzz(); buyFeatured(b.dataset.key); break;
+    case 'sh-bundle': sfx('open'); buzz(); buyBundleFlow(b.dataset.id); break;
     default: break;
   }
 }
@@ -1261,7 +1502,7 @@ export function initMenus({ startGame, audio, haptics } = {}) {
   START = startGame || null;
   AUDIO = audio || null;
   HAPTICS = haptics || null;
-  if (inited) return { showMenu, handleBack };
+  if (inited) return { showMenu, handleBack, celebrateRewards };
   inited = true;
   document.documentElement.classList.add('m-ready');
   applyReduced();
@@ -1287,6 +1528,8 @@ export function initMenus({ startGame, audio, haptics } = {}) {
   buildSettings();
   buildHowto();
   buildGallery();
+  buildTrophies();
+  window.addEventListener('relix:achievement', (e) => achToast(e.detail));
 
   for (const el of [title, setupEl, ...$$('.m-screen', root)]) onTap(el, '[data-act]', act);
 
@@ -1299,5 +1542,5 @@ export function initMenus({ startGame, audio, haptics } = {}) {
   bannerFontsReady().then(() => { if (current === 'title') ON_SHOW.title(); });
 
   showMenu('title');
-  return { showMenu, handleBack };
+  return { showMenu, handleBack, celebrateRewards };
 }

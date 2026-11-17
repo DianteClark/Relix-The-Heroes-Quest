@@ -147,10 +147,49 @@ function emblems() {
       ['light', circle(57, 48.5, 3.8)],
       ['light', circle(43.5, 63, 1.8)],
     ],
+    moon: [
+      ['base', P('M64 6 C36 8 16 30 16 55 C16 80 37 97 63 96 C45 86 36 70 36 51 C36 32 46 16 64 6 Z')],
+      ['shade', P('M63 96 C45 86 36 70 36 51 C36 40 40 29 46 21 C32 32 26 46 27 60 C28 78 42 92 63 96 Z')],
+      ['light', P('M30 36 C34 26 42 18 50 14 C42 22 37 30 35 40 Z')],
+      ['base', poly([[78, 30], [82, 42], [94, 44], [84, 51], [87, 63], [78, 56], [69, 63], [72, 51], [62, 44], [74, 42]])],
+      ['light', circle(66, 78, 3.4)],
+    ],
+    heart: [
+      ['base', P('M50 92 C30 76 8 62 8 38 C8 22 20 12 33 12 C41 12 47 16 50 22 C53 16 59 12 67 12 C80 12 92 22 92 38 C92 62 70 76 50 92 Z')],
+      ['shade', P('M50 92 C70 76 92 62 92 38 C92 28 87 20 80 16 C84 42 70 66 50 80 Z')],
+      ['light', P('M20 30 C22 22 29 18 35 19 C30 23 26 28 25 35 Z')],
+      ['cut', P('M50 34 L44 48 L54 56 L46 70 L49 71 L58 56 L48 48 L53 35 Z')],
+    ],
+    key: [
+      ['base', circle(50, 26, 22)],
+      ['cut', circle(50, 26, 9)],
+      ['base', P('M43 44 L57 44 L57 94 L43 94 Z')],
+      ['base', P('M57 66 L74 66 L74 75 L57 75 Z M57 82 L68 82 L68 92 L57 92 Z')],
+      ['shade', P('M51 44 L57 44 L57 94 L51 94 Z')],
+      ['light', P('M33 18 C36 11 43 7 49 7 C43 11 39 15 37 22 Z')],
+    ],
+    tower: [
+      ['base', P('M28 32 L72 32 L68 94 L32 94 Z')],
+      ['base', P('M22 10 L34 10 L34 18 L44 18 L44 10 L56 10 L56 18 L66 18 L66 10 L78 10 L78 34 L22 34 Z')],
+      ['shade', P('M60 32 L72 32 L68 94 L62 94 Z M70 10 L78 10 L78 34 L70 34 Z')],
+      ['light', P('M30 36 L36 36 L35 88 L33 88 Z')],
+      ['cut', P('M42 94 L42 76 C42 66 58 66 58 76 L58 94 Z')],
+      ['cut', P('M46 42 L54 42 L54 56 L46 56 Z')],
+    ],
+    bolt: [
+      ['base', P('M60 3 L20 56 L46 56 L36 97 L82 38 L55 38 Z')],
+      ['light', P('M60 3 L20 56 L32 56 L54 22 Z')],
+      ['shade', P('M55 38 L82 38 L36 97 L62 46 Z')],
+    ],
+    flame: [
+      ['base', P('M50 4 C58 22 82 34 82 60 C82 80 67 95 50 95 C33 95 18 80 18 60 C18 46 26 38 33 31 C33 44 37 50 44 52 C40 36 44 20 50 4 Z')],
+      ['shade', P('M67 30 C76 40 82 50 82 60 C82 80 67 95 50 95 C64 86 72 72 72 58 C72 48 70 38 67 30 Z')],
+      ['light', P('M50 46 C54 56 64 62 64 72 C64 82 58 89 50 89 C42 89 36 82 36 72 C36 64 41 60 44 56 C46 62 48 64 51 64 C49 58 48 52 50 46 Z')],
+    ],
   };
   return EMB;
 }
-export const EMBLEM_IDS = ['dragon', 'sword', 'skull', 'crown', 'star', 'shield', 'gem', 'eye'];
+export const EMBLEM_IDS = ['dragon', 'sword', 'skull', 'crown', 'star', 'shield', 'gem', 'eye', 'moon', 'heart', 'key', 'tower', 'bolt', 'flame'];
 
 /** Draws an emblem centered on (cx, cy) inside a size×size box. */
 export function drawEmblem(ctx, id, cx, cy, size, color = '#f4ecdf', opts = {}) {
@@ -248,6 +287,47 @@ function drawPattern(ctx, b, W, H, notch, cloth) {
       };
       tongue(1, acc, 0);
       tongue(0.6, mix(acc, '#ffffff', 0.45), -W * 0.02);
+      break;
+    }
+    case 'pale': ctx.fillRect(W * 0.34, 0, W * 0.32, H); break;
+    case 'chief': ctx.fillRect(0, 0, W, H * 0.27); break;
+    case 'bend': {
+      ctx.lineWidth = W * 0.26;
+      ctx.lineCap = 'butt';
+      ctx.beginPath(); ctx.moveTo(-W * 0.15, -H * 0.05); ctx.lineTo(W * 1.15, H * 0.92); ctx.stroke();
+      break;
+    }
+    case 'checky': {
+      const cols = 4, cw = W / cols, rows = Math.ceil(H / cw);
+      for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) if ((r + c) % 2) ctx.fillRect(c * cw, r * cw, cw + 0.5, cw + 0.5);
+      break;
+    }
+    case 'lozenge': {
+      const cw = W / 3, ch = cw * 1.3;
+      for (let y = -ch / 2, r = 0; y < H + ch; y += ch / 2, r++) {
+        for (let x = r % 2 ? cw / 2 : 0; x < W + cw; x += cw) ctx.fill(poly([[x, y - ch * 0.42], [x + cw * 0.38, y], [x, y + ch * 0.42], [x - cw * 0.38, y]]));
+      }
+      break;
+    }
+    case 'wavy': {
+      const bands = [0.22, 0.5, 0.78], amp = H * 0.035, th = H * 0.075;
+      for (const f of bands) {
+        const y0 = H * f;
+        ctx.beginPath();
+        ctx.moveTo(-2, y0);
+        for (let x = 0; x <= W + 2; x += 2) ctx.lineTo(x, y0 + Math.sin((x / W) * Math.PI * 4) * amp);
+        for (let x = W + 2; x >= -2; x -= 2) ctx.lineTo(x, y0 + th + Math.sin((x / W) * Math.PI * 4) * amp);
+        ctx.closePath(); ctx.fill();
+      }
+      break;
+    }
+    case 'starry': {
+      const pts = [[0.2, 0.12], [0.78, 0.16], [0.5, 0.3], [0.14, 0.46], [0.86, 0.44], [0.3, 0.66], [0.72, 0.7], [0.5, 0.86], [0.12, 0.84], [0.9, 0.88]];
+      for (const [fx, fy] of pts) {
+        const cx = fx * W, cy = fy * H, R = W * (0.055 + 0.03 * ((fx * 7 + fy * 3) % 1)), r = R * 0.42, pp = [];
+        for (let i = 0; i < 10; i++) { const a = -Math.PI / 2 + (i * Math.PI) / 5, rr = i % 2 ? r : R; pp.push([cx + Math.cos(a) * rr, cy + Math.sin(a) * rr]); }
+        ctx.fill(poly(pp));
+      }
       break;
     }
     default: break;
