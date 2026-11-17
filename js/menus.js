@@ -1084,25 +1084,78 @@ function renderGallery() {
   let items = [], sub = '';
   if (GAL.tab === 'heroes') { items = HEROES.map((h) => cell(heroFront(h.id), 'hero', h.id)); sub = `${HEROES.length} heroes · tap to see their skill`; }
   if (GAL.tab === 'monsters') { items = MONSTERS.map((m) => cell(monsterCard(m.id), 'monster', m.id, m.count)); sub = `${sumCounts(MONSTERS)} monster cards`; }
-  if (GAL.tab === 'bosses') { items = BOSSES.map((b) => cell(bossFront(b), 'boss', b.id)); sub = 'One boss guards each floor'; }
+  if (GAL.tab === 'bosses') { items = BOSSES.map((b) => cell(bossFront(b), 'boss', b.id)); sub = 'One boss guards each floor · tap to see their skill'; }
   if (GAL.tab === 'treasures') { items = TREASURES.map((t) => cell(treasureCard(t.id), 'treasure', t.id, t.count)); sub = `${sumCounts(TREASURES)} treasure cards`; }
   if (GAL.tab === 'traps') { items = TRAPS.map((t) => cell(trapCard(t.id), 'trap', t.id, t.count)); sub = `${sumCounts(TRAPS)} trap cards`; }
-  if (GAL.tab === 'backs') { items = ['Hero', 'Monster', 'Boss', 'Treasure', 'Trap'].map((w) => cell(cardBack(w), 'back', w)); sub = 'Card backs'; }
+  if (GAL.tab === 'backs') { items = ['Hero', 'Monster', 'Boss', 'Treasure', 'Trap', 'Pet'].map((w) => cell(cardBack(w), 'back', w)); sub = 'Card backs'; }
   $('.ga-sub', el).textContent = sub;
   $('.ga-grid', el).innerHTML = items.join('');
   $('.m-body', el).scrollTop = 0;
 }
-function zoomCard(kind, id) {
-  let html = '';
-  if (kind === 'hero') html = heroFront(id) + heroBack(id);
-  else if (kind === 'boss') { const b = BOSSES.find((x) => x.id === id); html = bossFront(b) + bossBack(b); }
-  else if (kind === 'monster') html = monsterCard(id);
-  else if (kind === 'treasure') html = treasureCard(id);
-  else if (kind === 'trap') html = trapCard(id);
-  else html = cardBack(id);
-  const { el } = overlay('m-zoom', `<div class="zm-cards ${html.split('class="card').length > 2 ? 'pair' : ''}">${html}</div><button class="m-x zm-x" data-act="x" aria-label="Close">${I.close}</button><p class="zm-hint">Tap anywhere to close</p>`);
+function zoomCard(kind, id, src) {
+  let front = '', back = '';
+  if (kind === 'hero') { front = heroFront(id); back = heroBack(id); }
+  else if (kind === 'boss') { const b = BOSSES.find((x) => x.id === id); front = bossFront(b); back = bossBack(b); }
+  else if (kind === 'monster') front = monsterCard(id);
+  else if (kind === 'treasure') front = treasureCard(id);
+  else if (kind === 'trap') front = trapCard(id);
+  else front = cardBack(id);
+  const flippable = !!back;
+  const srcCard = src && $('.card', src);
+  const rm = reducedMotion();
+  let stage = null;
+  const fly = (toSrc) => {
+    if (rm || !stage) return;
+    const r = srcCard?.getBoundingClientRect(), d = stage.getBoundingClientRect();
+    const visible = r && r.width > 0 && r.bottom > 0 && r.top < innerHeight;
+    const from = visible ? `translate(${r.left + r.width / 2 - (d.left + d.width / 2)}px, ${r.top + r.height / 2 - (d.top + d.height / 2)}px) scale(${r.width / d.width})` : 'scale(.6)';
+    const k = [{ transform: from, opacity: visible ? 1 : 0 }, { transform: 'none', opacity: 1 }];
+    stage.animate(toSrc ? k.reverse() : k, toSrc ? { duration: 220, easing: 'cubic-bezier(.5,0,.75,0)', fill: 'forwards' } : { duration: 460, easing: 'cubic-bezier(.2,1.25,.35,1)' });
+  };
+  const { el } = overlay('m-zoom', `<div class="zm-stage ${flippable ? 'can-flip' : ''}" role="img" aria-label="Card">
+      <div class="zm-flip"><div class="zm-face zm-front">${front}</div>${flippable ? `<div class="zm-face zm-back">${back}</div>` : ''}</div></div>
+    ${flippable ? `<div class="zm-ctrl"><button class="m-btn stone zm-flipbtn" data-act="zm-flip"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 12a8 8 0 0 1 13.7-5.6M20 12a8 8 0 0 1-13.7 5.6" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round"/><path d="M18.5 2.5v4.6h-4.6M5.5 21.5v-4.6h4.6" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round"/></svg><span>Flip</span></button></div>` : ''}
+    <button class="m-x zm-x" data-act="x" aria-label="Close">${I.close}</button>
+    <p class="zm-hint">${flippable ? 'Swipe or tap the card to flip · tap outside to close' : 'Tap outside to close'}</p>`,
+  { onClose: () => { fly(true); if (srcCard) setTimeout(() => { src.style.visibility = ''; }, rm ? 0 : 230); } });
+  stage = $('.zm-stage', el);
+  const flip = $('.zm-flip', el);
+  if (srcCard && !rm) src.style.visibility = 'hidden';
+  fly(false);
   sfx('card_flip');
-  onTap(el, '.m-ov, [data-act]', () => { sfx('back'); goBack(); });
+
+  // ---- flip: follow the finger, snap to the nearest face
+  let angle = 0;
+  const setAngle = (a, anim = true) => { flip.classList.toggle('drag', !anim); flip.style.transform = `rotateY(${a}deg)`; };
+  const turn = (dir = 1) => { if (!flippable) return; angle += 180 * dir; setAngle(angle); sfx('card_flip'); buzz(); };
+  let drag = null;
+  stage.addEventListener('pointerdown', (e) => {
+    if (e.button > 0) return;
+    drag = { x: e.clientX, y: e.clientY, id: e.pointerId, dx: 0 };
+    try { stage.setPointerCapture(e.pointerId); } catch (err) { /* ignore */ }
+  });
+  stage.addEventListener('pointermove', (e) => {
+    if (!drag || e.pointerId !== drag.id) return;
+    drag.dx = e.clientX - drag.x;
+    if (flippable) setAngle(angle + Math.max(-200, Math.min(200, drag.dx * 0.75)), false);
+    else setAngle(Math.max(-14, Math.min(14, drag.dx * 0.12)), false);
+  });
+  const end = (e) => {
+    if (!drag || e.pointerId !== drag.id) return;
+    const { dx } = drag, moved = Math.hypot(e.clientX - drag.x, e.clientY - drag.y);
+    drag = null;
+    if (!flippable) { setAngle(0); return; }
+    if (Math.abs(dx) > 50) turn(dx > 0 ? 1 : -1);
+    else if (moved < 10 && e.type === 'pointerup') turn(1);
+    else setAngle(angle);
+  };
+  stage.addEventListener('pointerup', end);
+  stage.addEventListener('pointercancel', end);
+  stage.addEventListener('click', (e) => e.stopPropagation());
+  onTap(el, '[data-act]', (b) => {
+    if (b.dataset.act === 'zm-flip') { turn(1); return; }
+    sfx('back'); goBack();
+  });
 }
 
 // ================================================================= actions
@@ -1152,7 +1205,7 @@ async function act(b) {
       break;
     }
     case 'ga-tab': GAL.tab = b.dataset.id; sfx('tap'); buzz(); renderGallery(); break;
-    case 'zoom': zoomCard(b.dataset.kind, b.dataset.id); break;
+    case 'zoom': zoomCard(b.dataset.kind, b.dataset.id, b); break;
     default: break;
   }
 }

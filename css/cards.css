@@ -1,0 +1,144 @@
+/* Relix cards: "Stone & Sky". Built from the designer's card layers in assets/ui/v3
+   (wall.webp, rockframe.webp, window_mask.webp, banner.webp). Layout matches the
+   732 x 1101 PSD. Every inner size uses cqw of the card, so a card scales from a 52px
+   thumbnail to full screen. Markup comes from js/cards.js. */
+@font-face { font-family: 'Luckiest Guy'; src: url(../assets/fonts/luckiest-guy-latin-400-normal.woff2) format('woff2'); font-display: swap; }
+@font-face { font-family: 'Lilita One'; src: url(../assets/fonts/lilita-one-latin-400-normal.woff2) format('woff2'); font-display: swap; }
+@font-face { font-family: 'Nunito'; font-weight: 900; src: url(../assets/fonts/nunito-latin-900-normal.woff2) format('woff2'); font-display: swap; }
+
+:where(.card.cs) { width: 200px; }
+.card.cs { --ink: #140c1e; font: normal 400 16px/1.2 'Nunito', sans-serif; letter-spacing: normal; text-transform: none; text-shadow: none; color: #fff; white-space: normal; position: relative; aspect-ratio: 732 / 1101; height: auto; container-type: inline-size; flex: none;
+  user-select: none; -webkit-user-select: none; filter: none; -webkit-touch-callout: none; text-align: left; }
+.card.cs .cs-in { position: absolute; inset: 0; filter: drop-shadow(0 1.6cqw 0 var(--ink)) drop-shadow(0 4cqw 5cqw rgba(30, 8, 50, .42)); }
+.card.cs .cs-in > * { position: absolute; }
+.card.cs b, .card.cs small, .card.cs i { margin: 0; padding: 0; font-style: normal; }
+.cs img { -webkit-user-drag: none; }
+
+/* layers */
+.card.cs .cs-wall { inset: 0; border-radius: 4cqw; background: #3a3448 url(../assets/ui/v3/wall.webp) center / cover; box-shadow: inset 0 0 0 1.1cqw var(--ink); }
+.card.cs .cs-wall::after { content: ''; position: absolute; inset: 0; border-radius: inherit; background: linear-gradient(transparent 55%, rgba(0, 0, 0, .28)); }
+.card.cs .cs-win { left: 6.3%; top: 4%; width: 87.8%; height: 59.8%; overflow: hidden;
+  -webkit-mask: url(../assets/ui/v3/window_mask.webp) center / 100% 100% no-repeat; mask: url(../assets/ui/v3/window_mask.webp) center / 100% 100% no-repeat;
+  background: linear-gradient(var(--sky1), var(--sky2) 52%, var(--sky3)); }
+.card.cs .cs-win i { position: absolute; display: block; }
+.card.cs .cs-rays { left: 50%; top: 78%; width: 220cqw; height: 220cqw; margin: -110cqw 0 0 -110cqw;
+  background: repeating-conic-gradient(rgba(255, 255, 255, .17) 0 6deg, transparent 6deg 18deg); }
+.card.cs .cs-sun { left: 50%; top: 80%; width: 74cqw; height: 74cqw; margin: -37cqw 0 0 -37cqw; border-radius: 50%; background: radial-gradient(circle, rgba(255, 255, 255, .6), transparent 65%); }
+.card.cs .cs-hill { left: -10%; right: -10%; bottom: -14%; height: 34%; border-radius: 50% 50% 0 0; background: var(--hill); box-shadow: inset 0 2cqw 0 rgba(255, 255, 255, .25); }
+.card.cs .cs-art { left: 5%; top: 1.5%; width: 90%; height: 60.5%; display: flex; align-items: flex-end; justify-content: center; pointer-events: none; }
+.card.cs .cs-art img { max-width: 100%; max-height: 100%; object-fit: contain; filter: drop-shadow(0 1.4cqw 0 rgba(20, 12, 30, .35)); transform-origin: 50% 100%; }
+.card.cs .cs-art.svg { align-items: center; padding: 8% 10% 10%; }
+.card.cs .cs-art svg { width: 100%; height: 100%; overflow: visible; filter: drop-shadow(0 1.4cqw 0 rgba(20, 12, 30, .35)); transform-origin: 50% 80%; }
+.card.cs .cs-frame { inset: 0; width: 100%; height: 100%; pointer-events: none; }
+
+/* nameplate */
+.card.cs .cs-ban { left: 3%; top: 60.1%; width: 94%; height: 18.5%; display: grid; place-items: center; }
+.card.cs .cs-ban img { position: absolute; inset: 0; width: 100%; height: 100%; filter: var(--banf); }
+.card.cs .cs-ban b { position: relative; font-family: 'Luckiest Guy', 'Lilita One', sans-serif; font-weight: normal; font-size: 9.6cqw; line-height: 1; color: #fff; letter-spacing: .3cqw;
+  margin-top: -1.4cqw; white-space: nowrap; -webkit-text-stroke: .12em var(--ink); paint-order: stroke fill; text-shadow: 0 .09em 0 var(--ink); }
+.card.cs .cs-ban small { position: absolute; bottom: 13%; left: 0; right: 0; text-align: center; font: 900 3.2cqw/1 'Nunito', sans-serif; letter-spacing: .6cqw; color: var(--tagc);
+  text-transform: uppercase; white-space: nowrap; text-shadow: 0 .3cqw 0 var(--ink); }
+
+/* sword + heart */
+.card.cs .cs-stats { left: 11%; right: 11%; top: 79%; height: 15%; display: flex; justify-content: space-between; align-items: center; }
+.card.cs .cs-stat { position: relative; width: 20cqw; height: 20cqw; flex: none; display: grid; place-items: center; }
+.card.cs .cs-stat img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; filter: drop-shadow(0 .8cqw 0 var(--ink)); }
+.card.cs .cs-stat b { position: relative; font-family: 'Luckiest Guy', sans-serif; font-weight: normal; font-size: 9cqw; line-height: 1; color: #fff; -webkit-text-stroke: 1cqw var(--ink); paint-order: stroke fill; }
+.card.cs .cs-atk b { margin-top: -4cqw; }
+.card.cs .cs-hp b { margin-top: -1cqw; }
+.card.cs .cs-hp.hurt b { color: #ffd0d0; }
+.card.cs .cs-mid { flex: 1; min-width: 0; text-align: center; font: 900 3.6cqw/1.15 'Nunito', sans-serif; color: #fff; text-shadow: 0 .4cqw 0 var(--ink); padding: 0 1cqw; }
+.card.cs .cs-mid i { font-style: normal; display: block; font-family: 'Luckiest Guy', sans-serif; font-size: 5.2cqw; color: var(--tagc); -webkit-text-stroke: .6cqw var(--ink); paint-order: stroke fill; letter-spacing: .4cqw; white-space: nowrap; }
+
+/* effect text under the banner */
+.card.cs .cs-text { left: 9%; right: 9%; top: 78.6%; height: 15.6%; display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center;
+  font-family: 'Lilita One', sans-serif; line-height: 1.06; color: #fff; }
+.card.cs .cs-text .cs-p { margin: 0; text-wrap: balance; -webkit-text-stroke: .15em var(--ink); paint-order: stroke fill; text-shadow: 0 .11em 0 var(--ink); }
+.card.cs .cs-text small { display: block; font: 900 3cqw/1 'Nunito', sans-serif; color: var(--tagc); letter-spacing: .4cqw; margin-top: 1.3cqw; text-transform: uppercase; text-shadow: 0 .3cqw 0 var(--ink); white-space: nowrap; }
+
+/* boss floor plaque */
+.card.cs .cs-floor { top: -1.6cqw; left: 50%; transform: translateX(-50%); z-index: 4; font-family: 'Luckiest Guy', sans-serif; font-size: 4.6cqw; line-height: 1; color: #ffe27a; letter-spacing: .5cqw;
+  padding: 1.5cqw 3.4cqw .7cqw; border-radius: 2.4cqw; background: linear-gradient(#6a4a5a, #3a2434); white-space: nowrap;
+  box-shadow: 0 0 0 .8cqw var(--ink), 0 1.1cqw 0 .8cqw var(--ink), inset 0 .8cqw 0 rgba(255, 255, 255, .2); -webkit-text-stroke: .5cqw var(--ink); paint-order: stroke fill; }
+
+/* legendary */
+.card.cs .cs-leg { top: -2cqw; left: 50%; transform: translateX(-50%); z-index: 5; font-family: 'Luckiest Guy', sans-serif; font-size: 5cqw; line-height: 1; color: #fff; letter-spacing: .6cqw;
+  padding: 1.5cqw 3cqw .6cqw; border-radius: 3cqw; white-space: nowrap; text-transform: uppercase;
+  background: linear-gradient(90deg, #ff5ad0, #ffd04a, #5ae0ff, #8aff6a, #ff5ad0); background-size: 400% 100%; animation: cs-slide 4s linear infinite;
+  -webkit-text-stroke: .7cqw var(--ink); paint-order: stroke fill; box-shadow: 0 0 0 .8cqw var(--ink), 0 1.2cqw 0 .8cqw var(--ink); }
+@keyframes cs-slide { to { background-position: 400% 0; } }
+.card.cs .cs-foil { inset: 0; border-radius: 4cqw; pointer-events: none; mix-blend-mode: overlay; opacity: .5;
+  background: linear-gradient(115deg, transparent 20%, rgba(255, 90, 208, .55) 32%, rgba(255, 208, 74, .55) 40%, rgba(90, 224, 255, .55) 48%, rgba(138, 255, 106, .5) 56%, transparent 68%);
+  background-size: 260% 260%; background-position: 0 0; }
+.card.cs .cs-shine { inset: 0; border-radius: 4cqw; pointer-events: none; overflow: hidden; }
+.card.cs .cs-shine::before { content: ''; position: absolute; top: -20%; bottom: -20%; width: 30%; left: -40%; transform: skewX(-18deg);
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, .2), transparent); opacity: 0; }
+
+/* ability cards (hero / boss backs) */
+.card.cs .cs-panel { left: 12.5%; right: 12.5%; top: 8.4%; height: 50%; display: flex; align-items: center; justify-content: center; padding: 2.6cqw 3.4cqw;
+  border-radius: 4cqw; background: linear-gradient(#fff8e6, #f3e2bf); box-shadow: 0 0 0 1cqw var(--ink), 0 1.4cqw 0 1cqw var(--ink), inset 0 -1.6cqw 0 rgba(150, 100, 40, .18);
+  color: #2a1438; font-family: 'Lilita One', sans-serif; line-height: 1.12; }
+.card.cs .cs-pin { text-wrap: pretty; width: 100%; max-height: 100%; overflow: hidden; }
+.card.cs .cs-pin > div + div { margin-top: .5em; }
+.card.cs .cs-ln { display: flex; align-items: flex-start; gap: .45em; text-align: left; }
+.card.cs .cs-ln .cs-d { flex: none; width: 1.35em; height: 1.35em; margin-top: -.05em; }
+.card.cs .cs-note { text-align: center; font-family: 'Nunito', sans-serif; font-weight: 900; font-size: .8em; color: #7a4a2a; }
+.card.cs.cs-ability .cs-pin > div:only-child:not(.cs-ln) { text-align: center; font-family: 'Lilita One', sans-serif; font-weight: normal; font-size: 1em; color: #2a1438; }
+.card.cs .cs-foot { left: 10%; right: 10%; top: 79.5%; height: 14%; display: flex; align-items: center; justify-content: center; gap: 4cqw; }
+.card.cs .cs-med { position: relative; width: 17cqw; height: 17cqw; flex: none; border-radius: 50%; overflow: hidden; background: linear-gradient(var(--sky1), var(--sky2));
+  box-shadow: 0 0 0 .9cqw var(--ink), 0 1.2cqw 0 .9cqw var(--ink); }
+.card.cs .cs-med img { position: absolute; left: -15%; top: -4%; width: 130%; height: 160%; object-fit: cover; object-position: 50% 0; }
+.card.cs .cs-trig { display: flex; flex-direction: column; align-items: center; gap: 1.2cqw; }
+.card.cs .cs-trig i { font: 900 3.1cqw/1 'Nunito', sans-serif; font-style: normal; color: var(--tagc); letter-spacing: .5cqw; text-transform: uppercase; text-shadow: 0 .3cqw 0 var(--ink); white-space: nowrap; }
+.card.cs .cs-trig > span { display: flex; gap: 1.6cqw; }
+.card.cs .cs-trig .cs-d { width: 9cqw; height: 9cqw; filter: drop-shadow(0 .7cqw 0 var(--ink)); }
+.card.cs .cs-third { font-family: 'Luckiest Guy', sans-serif; font-size: 8cqw; line-height: 1; color: #fff; -webkit-text-stroke: .9cqw var(--ink); paint-order: stroke fill; text-shadow: 0 .8cqw 0 var(--ink); }
+
+/* backs */
+.card.cs.cs-backsky { background: linear-gradient(var(--sky1), var(--sky2)); }
+.card.cs.cs-backsky::before { content: ''; position: absolute; inset: 0; background: repeating-linear-gradient(45deg, rgba(255, 255, 255, .09) 0 3cqw, transparent 3cqw 6cqw); }
+.card.cs.cs-backsky .cs-rays { top: 48%; opacity: .7; }
+.card.cs .cs-emb, .card.cs .cs-emb-ink { left: 14%; top: 10%; width: 72%; height: 50%; -webkit-mask: url(../assets/ui/dragon.webp) center / contain no-repeat; mask: url(../assets/ui/dragon.webp) center / contain no-repeat; }
+.card.cs .cs-emb { background: linear-gradient(var(--emb), color-mix(in srgb, var(--emb), #000 22%)); }
+.card.cs .cs-emb-ink { background: var(--ink); transform: translate(.9cqw, 1.3cqw); }
+.card.cs.cs-back .cs-ban b { font-size: 10.4cqw; }
+.card.cs .cs-bdie { left: 50%; top: 79.5%; width: 18cqw; height: 18cqw; margin-left: -9cqw; transform: rotate(12deg); filter: drop-shadow(0 1.2cqw 0 var(--ink)); }
+.card.cs .cs-bdie .cs-d { width: 100%; height: 100%; display: block; }
+
+/* palettes: vibrant two-tone skies like the designer's yellow-to-purple sunset */
+.k-hero { --sky1: #9fe0ff; --sky2: #5a8cff; --sky3: #7a4ad8; --hill: #3a5ab8; --tagc: #9fe0ff; --banf: sepia(1) saturate(3) hue-rotate(180deg) brightness(.71); --emb: #ffd23f; }
+.k-monster { --sky1: #ffd27a; --sky2: #f0904a; --sky3: #a84aa8; --hill: #6a2a6a; --tagc: #ffd27a; --banf: sepia(1) saturate(1.8) hue-rotate(-20deg) brightness(.54); --emb: #ff6a4a; }
+.k-boss { --sky1: #ffb27a; --sky2: #e8405a; --sky3: #5a1a6a; --hill: #3a0f2a; --tagc: #ffb27a; --banf: sepia(1) saturate(3) hue-rotate(-50deg) brightness(.65); --emb: #ffd23f; }
+.k-treasure { --sky1: #fff3a0; --sky2: #ffc23a; --sky3: #e8703a; --hill: #a85a1a; --tagc: #ffe27a; --banf: sepia(1) saturate(2.6) hue-rotate(-10deg) brightness(.77); --emb: #ff9a2a; }
+.k-trap { --sky1: #a8ffd8; --sky2: #2ac0a0; --sky3: #1a5a6a; --hill: #0f3a3a; --tagc: #a8ffd8; --banf: sepia(1) saturate(2.4) hue-rotate(120deg) brightness(.54); --emb: #c88aff; }
+.k-pet { --sky1: #d8ff8a; --sky2: #6ad86a; --sky3: #2a8a6a; --hill: #1a5a3a; --tagc: #d8ff8a; --banf: sepia(1) saturate(2.4) hue-rotate(60deg) brightness(.61); --emb: #ffd23f; }
+
+/* small cards (hand thumbnails, chips): drop fine print, keep art + name + numbers */
+@container (max-width: 120px) {
+  .card.cs .cs-in { filter: drop-shadow(0 2cqw 0 var(--ink)); }
+  .card.cs .cs-ban small, .card.cs .cs-text small, .card.cs .cs-mid, .card.cs .cs-trig i, .card.cs .cs-note { display: none; }
+  .card.cs .cs-ban b { margin-top: 0; }
+  .card.cs .cs-leg { font-size: 7cqw; padding: 2cqw 3cqw 1cqw; }
+  .card.cs .cs-floor { font-size: 6.4cqw; }
+}
+@container (max-width: 74px) {
+  .card.cs .cs-text .cs-p { display: none; }
+  .card.cs .cs-wall { box-shadow: inset 0 0 0 1.8cqw var(--ink); }
+}
+
+/* motion only where it can be seen: big cards */
+@container (min-width: 170px) {
+  .card.cs .cs-rays { animation: cs-spin 60s linear infinite; }
+  .card.cs .cs-art img, .card.cs .cs-art svg { animation: cs-bob 3.2s ease-in-out infinite; }
+  .card.cs .cs-shine::before { opacity: 1; animation: cs-sweep 5s ease-in-out infinite; }
+  .card.cs .cs-foil { animation: cs-foil 6s ease-in-out infinite alternate; }
+}
+@keyframes cs-spin { to { transform: rotate(360deg); } }
+@keyframes cs-bob { 50% { transform: translateY(-1.2cqw); } }
+@keyframes cs-sweep { 0%, 15% { left: -40%; } 65%, 100% { left: 120%; } }
+@keyframes cs-foil { to { background-position: 100% 100%; } }
+@media (prefers-reduced-motion: reduce) { .card.cs *, .card.cs *::before { animation: none !important; } }
+.m-reduced .card.cs *, .m-reduced .card.cs *::before { animation: none !important; }
+
+/* in-game hand button mini cards: Stone & Sky backs instead of the old olive */
+#handBtn .hb-cards i { background: linear-gradient(#9fe0ff, #5a8cff 55%, #7a4ad8); border: 1.5px solid #140c1e; box-shadow: inset 0 0 0 2px #7ab8a0; border-radius: 3px; }
