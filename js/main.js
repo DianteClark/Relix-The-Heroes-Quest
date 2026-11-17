@@ -164,6 +164,7 @@ const io = {
   pause(ms) { return sleep(ms); },
   async dice(p, values, label, opts = {}) {
     const kind = opts.combat ? 'combat' : opts.skill ? 'skill' : opts.pvp ? 'pvp' : 'move';
+    if (opts.combat) ach('roll', { values }, p.id);
     if (tray) {
       document.body.classList.add('rolling');
       try { await rollTray(p, values, label, opts, kind); } finally { document.body.classList.remove('rolling'); }
@@ -347,7 +348,25 @@ function floatAt(pid, text, cls) {
   setTimeout(() => el.remove(), 1300);
 }
 
+// Achievements: only the local human players earn them.
+function ach(event, data, pid) {
+  if (pid == null || !game || game.players[pid]?.isBot || !mods.profile?.achievementsFor) return;
+  try { mods.profile.achievementsFor(event, data); } catch (e) { console.warn(e); }
+}
+function achievementEvents(type, d) {
+  const p = d && d.player != null ? game.players[d.player] : null;
+  if (!p) return;
+  if (type === 'kill') ach('kill', { target: d.target, bossId: d.bossId }, p.id);
+  if (type === 'pvpWin') ach('pvp_win', {}, p.id);
+  if (type === 'bossDown') ach('relic', { count: p.relics.length }, p.id);
+  if (type === 'hp' && d.delta < 0 && p.hp > 0) ach('hp', { hp: p.hp }, p.id);
+  if (type === 'trap') ach('trap', { id: d.card.id }, p.id);
+  if (type === 'equip' && d.card.id.startsWith('pet_')) ach('pet', { id: d.card.id }, p.id);
+  if (type === 'draw') ach('hand', { count: p.hand.length }, p.id);
+}
+
 function onEvent(type, d) {
+  achievementEvents(type, d);
   switch (type) {
     case 'floor':
       view.setFloor(game);
@@ -383,7 +402,7 @@ function onEvent(type, d) {
     case 'combatEnd': view.hideEnemy(); break;
     case 'bossDown': view.fx('relic', game.bossIdx); break;
     case 'draw': view.fx('loot', game.players[d.player].pos); floatAt(d.player, `+${d.cards.length} card${d.cards.length > 1 ? 's' : ''}`, 'loot'); break;
-    case 'guilds': sfx('guild'); break;
+    case 'guilds': sfx('guild'); game.guilds.forEach((g) => ach('guild', {}, g.leader)); break;
     case 'play': playedToast(game.players[d.player], d.card); sfx('card_flip'); break;
   }
   if (['equip', 'play', 'hand', 'draw', 'guilds', 'bossDown', 'respawn', 'revive'].includes(type)) view.syncPlayers(game);
@@ -613,8 +632,17 @@ function showEnd(r) {
   try { audio.music(r.kind === 'loss' ? 'defeat' : 'victory'); } catch { /* ignore */ }
   const winners = r.winner ? r.winner.map((id) => game.players[id]) : [];
   const human = game.players.find((p) => !p.isBot);
-  let coins = 0;
-  if (human && mods.profile?.awardCoins) {
+  let coins = 0, res = null;
+  if (human && mods.profile?.awardGame) {
+    try {
+      res = mods.profile.awardGame({
+        placement: r.scores.findIndex((sc) => sc.members.includes(human)) + 1, players: r.scores.length,
+        relics: human.relics.length, kills: human.kills, bossKills: human.bossKills.length, bossIds: human.bossKills,
+        won: winners.includes(human), mode: game.mode, hero: human.hero, deaths: human.deaths,
+      });
+      coins = res.totalCoins ?? res.coins;
+    } catch (e) { console.warn(e); }
+  } else if (human && mods.profile?.awardCoins) {
     coins = 20 + human.relics.length * 25 + (winners.includes(human) ? 60 : 0) + human.kills * 2;
     mods.profile.awardCoins(coins);
   }
@@ -636,10 +664,13 @@ function showEnd(r) {
     <div class="podium">${order.join('')}</div>
     <div class="awards">${awards.map(([t, p, f]) => `<div class="award"><span class="aw-face" style="background-image:url(${artUrl(heroDef(p.hero).art)})"></span><b>${t}</b><small>${esc(p.name)} · ${f(p)}</small></div>`).join('')}</div>
     ${ranked.length > 3 ? `<div>${ranked.slice(3).map((sc, i) => `<div class="score"><b>${i + 4}. ${esc(sc.label)}</b>${gems(sc.relics)}</div>`).join('')}</div>` : ''}
+    ${res ? `<div class="xp-box"><div class="xp-lv">Lv ${res.after.level}</div><div class="xp-bar"><i style="width:${Math.round((res.before.level === res.after.level ? res.before.frac : 0) * 100)}%" data-to="${Math.round(res.after.frac * 100)}"></i></div><b>+${res.xp} XP</b></div>` : ''}
     ${coins ? `<p class="coins-won">+${coins} Relix Coins</p>` : ''}
     <p class="end-stats">${r.turns} turns · ${r.stats.deaths} deaths · ${r.stats.pvp} PvP battles${r.stats.fiveKind ? ` · ${r.stats.fiveKind} five-of-a-kind` : ''}</p>
     <div class="menu-list"><button class="btn big" id="eAgain">Play Again</button><button class="btn ghost" id="eTitle">Title Screen</button></div>`;
   if (r.kind !== 'loss') confetti($('#confetti'));
+  setTimeout(() => { const i = $('.xp-bar i'); if (i) i.style.width = i.dataset.to + '%'; }, 700);
+  if (res && (res.levelUps?.length || res.achievements?.length) && mods.menus?.celebrateRewards) setTimeout(() => mods.menus.celebrateRewards(res), 3800);
   onTap($('#eAgain'), () => backToTitle());
   onTap($('#eTitle'), () => backToTitle());
 }

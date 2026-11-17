@@ -60,6 +60,7 @@ export class Game {
       fx: { letDown: false, skillBlocked: false, doubleBattle: false },
       bossBattle: null,
       kills: 0,
+      bossKills: [],
     }));
     this.order = this.rng.shuffle(this.players.map((p) => p.id));
     this.treasure = new Deck(TREASURES, this.rng, 't');
@@ -196,6 +197,7 @@ export class Game {
       killer.hand.push(...cards);
       killer.relics.push(...relics);
       killer.kills++;
+      this.emit('kill', { player: killer.id, target: 'player' });
       if (cards.length || relics.length) this.log(`${killer.name} collects ${cards.length} treasure(s)${relics.length ? ' and ' + relics.length + ' Relic(s)' : ''}.`, 'loot');
     } else if (cause === 'trap') {
       const pile = (this.tileLoot[where] ||= { cards: [], relics: [] });
@@ -892,6 +894,7 @@ export class Game {
     this.monsters.toss(card);
     if (enemy.hp <= 0 && alive()) {
       p.kills++;
+      this.emit('kill', { player: p.id, target: 'monster' });
       this.log(`${p.name} defeats the ${def.name}!`, 'big');
       await this.show('defeat', { side: 'enemy', player: p.id });
       await this.show('combatEnd', { won: true });
@@ -967,6 +970,8 @@ export class Game {
     const b = this.boss;
     b.defeated = true;
     const relic = { floor: this.floor, name: `Relic of ${b.def.name}`, boss: b.def.id };
+    p.bossKills.push(b.def.id);
+    this.emit('kill', { player: p.id, target: 'boss', bossId: b.def.id });
     p.relics.push(relic);
     p.hand.push(...b.pile.cards);
     p.relics.push(...b.pile.relics);
@@ -1108,7 +1113,7 @@ export class Game {
         await this.hurt(q, dmg, 'player', winner.rep, { from: winner.rep.name });
       }
     }
-    if (winner) this.log(`${winner.members.map((q) => q.name).join(' + ')} win${winner.members.length === 1 ? 's' : ''} the PvP!`, 'pvp');
+    if (winner) { this.log(`${winner.members.map((q) => q.name).join(' + ')} win${winner.members.length === 1 ? 's' : ''} the PvP!`, 'pvp'); winner.members.forEach((q) => this.emit('pvpWin', { player: q.id })); }
     await this.show('pvpEnd', { at, winner: winner ? winner.rep.id : null });
     this.emit('pvpEnd', { at });
   }

@@ -354,3 +354,18 @@ body.prompting #me .me-row { display: none; }
 .modal-card { border: 3px solid var(--inkc); box-shadow: 0 6px 0 var(--inkc), 0 20px 50px rgba(0,0,0,.5); background: linear-gradient(var(--panel-a), var(--panel-b)); }
 .modal-card h2 { color: #fff; -webkit-text-stroke: 3px var(--inkc); paint-order: stroke fill; text-shadow: 0 3px 0 var(--inkc); }
 #log { background: linear-gradient(var(--panel-a), var(--panel-b)); border-left: 3px solid var(--inkc); }
+
+.xp-box { display: flex; align-items: center; gap: 10px; max-width: 420px; margin: 10px auto; }
+.xp-lv { font-family: var(--title); font-size: 18px; color: #2a1a05; background: linear-gradient(#ffe27a, #e0a51c); border: 3px solid var(--inkc); border-radius: 50%; width: 52px; height: 52px; display: grid; place-items: center; box-shadow: 0 3px 0 var(--inkc); flex: none; }
+.xp-bar { flex: 1; height: 16px; border-radius: 8px; background: #1a1026; border: 3px solid var(--inkc); overflow: hidden; }
+.xp-bar i { display: block; height: 100%; background: linear-gradient(#a8f0ff, #3aa0e0); transition: width 1.6s cubic-bezier(.3,1,.4,1); }
+.xp-box b { font-family: var(--title); font-weight: normal; color: #9fe0ff; font-size: 18px; -webkit-text-stroke: 3px var(--inkc); paint-order: stroke fill; }
+/* vibrant end screen */
+#end { background: linear-gradient(#ffd27a 0%, #f0904a 22%, #a84aa8 60%, #3a2a6a 100%); }
+.end-box h1 { color: #ffd23f; -webkit-text-stroke: 5px var(--inkc); paint-order: stroke fill; text-shadow: 0 6px 0 var(--inkc); }
+.end-box h1.loss { color: #ff6a6f; }
+.end-text { color: #fff; text-shadow: 0 2px 0 var(--inkc); }
+.pod-step, .award, .score { border: 3px solid var(--inkc) !important; box-shadow: 0 4px 0 var(--inkc); background: linear-gradient(var(--panel-a), var(--panel-b)); }
+.pod.p1 .pod-step { background: linear-gradient(#ffd23f, #e0a51c); } .pod.p1 .pod-step span { color: #2a1a05; } .pod.p1 .pod-step b { color: #fff; -webkit-text-stroke: 3px var(--inkc); paint-order: stroke fill; }
+.end-stats { color: #fff; text-shadow: 0 1px 0 var(--inkc); }
+.coins-won { -webkit-text-stroke: 4px var(--inkc); paint-order: stroke fill; }
