@@ -68,11 +68,17 @@
 .bt-fighters, .bt-plates, .bt-pops { position: absolute; inset: 0; pointer-events: none; }
 .bt-fx { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
 .bt-f { position: absolute; --bt-glow: #f2c443; }
+.bt-fbase { position: absolute; z-index: 1; --bt-glow: #f2c443; pointer-events: none; }
 .bt-f.left { z-index: 2; }
 .portrait .bt-f.left { z-index: 3; }
 
 .bt-plat { position: absolute; left: 50%; bottom: 0; width: 118%; aspect-ratio: 3.6 / 1; transform: translate(-50%, 48%); }
-.bt-f.boss .bt-plat { width: 104%; }
+.bt-fbase.boss .bt-plat { width: 104%; }
+.bt-f.boss::before {
+  content: ''; position: absolute; left: -25%; right: -25%; top: -10%; bottom: 0; border-radius: 50%;
+  background: radial-gradient(closest-side, color-mix(in srgb, var(--bt-accent) 38%, transparent), color-mix(in srgb, #ff2a2a 12%, transparent) 55%, transparent);
+  animation: bt-pulse 3s ease-in-out infinite;
+}
 .bt-plat-glow {
   position: absolute; inset: -60% -18%; border-radius: 50%;
   background: radial-gradient(closest-side, color-mix(in srgb, var(--bt-glow) 50%, transparent), transparent);
@@ -135,12 +141,14 @@
 .bt-plate.boss::before { border-color: #ffd34a; box-shadow: 0 8px 18px rgba(0,0,0,.6), inset 0 0 0 1px rgba(255,226,122,.35), 0 0 16px color-mix(in srgb, var(--bt-accent) 55%, transparent); }
 .bt-plate > * { position: relative; }
 .bt-name { display: flex; align-items: center; gap: 7px; height: 24px; white-space: nowrap; overflow: hidden; }
-.bt-plate.right .bt-name { flex-direction: row-reverse; padding-right: 30px; }
+.bt-plate.right .bt-name { flex-direction: row-reverse; padding-left: 32px; }
 .bt-plate.left .bt-name { padding-right: 30px; }
 .bt-nm {
   font-family: var(--bt-title); font-size: 19px; letter-spacing: .5px; line-height: 1; color: #fff; overflow: hidden; text-overflow: ellipsis;
   text-shadow: 0 2px 0 #000, 1px 0 0 #000, -1px 0 0 #000, 0 -1px 0 #000;
 }
+.bt-plate.long .bt-nm { font-size: 15.5px; }
+.bt-overlay.landscape .bt-plate.long .bt-nm { font-size: 18px; }
 .bt-tag:empty { display: none; }
 .bt-tag {
   font-style: normal; font-family: var(--bt-ui); font-weight: 900; font-size: 10px; letter-spacing: 1.5px; padding: 2px 6px 1px; border-radius: 4px;
@@ -244,7 +252,7 @@
   --o: color-mix(in srgb, var(--sk) 35%, #000);
   text-shadow: 2px 0 0 var(--o), -2px 0 0 var(--o), 0 2px 0 var(--o), 0 -2px 0 var(--o), 2px 2px 0 var(--o), -2px -2px 0 var(--o), 2px -2px 0 var(--o), -2px 2px 0 var(--o), 0 5px 0 rgba(0,0,0,.6);
 }
-.bt-skill-glint { position: absolute; top: 0; bottom: 0; left: 0; width: 30%; background: linear-gradient(90deg, transparent, rgba(255, 255, 255, .75), transparent); mix-blend-mode: overlay; }
+.bt-skill-glint { position: absolute; top: 0; bottom: 0; left: 0; width: 30%; opacity: 0; background: linear-gradient(90deg, transparent, rgba(255, 255, 255, .75), transparent); mix-blend-mode: overlay; }
 
 .bt-flash { position: absolute; inset: 0; opacity: 0; pointer-events: none; background: #fff; z-index: 9; }
 .bt-safe { position: absolute; visibility: hidden; pointer-events: none; padding: env(safe-area-inset-top, 0px) env(safe-area-inset-right, 0px) env(safe-area-inset-bottom, 0px) env(safe-area-inset-left, 0px); }

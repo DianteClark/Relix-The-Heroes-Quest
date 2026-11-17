@@ -159,14 +159,16 @@ export class BattleScene {
   _buildFighter(side) {
     const f = { side };
     f.root = el('div', `bt-f ${side}`);
+    // Platform + shadow live in their own layer so a lunging fighter (raised z-index)
+    // never lifts its platform over the name plates.
+    f.base = el('div', `bt-fbase ${side}`);
+    f.base.innerHTML = `<div class="bt-plat"><i class="bt-plat-glow"></i><i class="bt-plat-top"></i></div><div class="bt-shadow"></div>`;
     f.root.innerHTML = `
-      <div class="bt-plat"><i class="bt-plat-glow"></i><i class="bt-plat-top"></i></div>
-      <div class="bt-shadow"></div>
       <div class="bt-act"><div class="bt-idle"><div class="bt-turn">
         <img class="bt-art" alt="" draggable="false"><i class="bt-tint"></i>
       </div></div></div>`;
-    f.plat = f.root.querySelector('.bt-plat');
-    f.shadow = f.root.querySelector('.bt-shadow');
+    f.plat = f.base.querySelector('.bt-plat');
+    f.shadow = f.base.querySelector('.bt-shadow');
     f.act = f.root.querySelector('.bt-act');
     f.idle = f.root.querySelector('.bt-idle');
     f.turn = f.root.querySelector('.bt-turn');
@@ -191,6 +193,7 @@ export class BattleScene {
     f.numS = f.plate.querySelector('.bt-num small');
     f.pennant = f.plate.querySelector('.bt-pennant');
     f.ko = f.plate.querySelector('.bt-ko');
+    this.$.fighters.appendChild(f.base);
     this.$.fighters.appendChild(f.root);
     this.$.plates.appendChild(f.plate);
     return f;
@@ -240,10 +243,13 @@ export class BattleScene {
     f.maxHp = Math.max(1, d.maxHp ?? d.hp ?? 1);
     f.boss = this.kind === 'boss' && d.side !== 'hero';
     f.root.className = `bt-f ${f.side}${f.boss ? ' boss' : ''} ${d.side === 'hero' ? 'hero' : 'enemy'}`;
+    f.base.className = `bt-fbase ${f.side}${f.boss ? ' boss' : ''}`;
     f.plate.className = `bt-plate ${f.side}${f.boss ? ' boss' : ''} ${d.side === 'hero' ? 'hero' : 'enemy'}`;
     f.root.style.opacity = '';
     f.act.style.opacity = '';
     f.img.style.filter = '';
+    f.tint.style.opacity = '';
+    this._stop(f.act); this._stop(f.tint);
     f.root.querySelectorAll('.bt-ghostimg').forEach((g) => g.remove());
     const art = d.art || d.id || 'skeleton_warrior';
     const url = /[/.]/.test(art) ? art : `${ART_BASE}${art}.webp`;
@@ -255,6 +261,7 @@ export class BattleScene {
     f.turn.classList.toggle('front', facing === 'front');
     f.tint.style.webkitMaskImage = f.tint.style.maskImage = `url("${url}")`;
     f.plate.querySelector('.bt-nm').textContent = d.name || '';
+    f.plate.classList.toggle('long', (d.name || '').length > 12);
     f.plate.querySelector('.bt-tag').textContent = f.boss ? 'BOSS' : d.side === 'hero' ? (d.title || '') : '';
     f.plate.querySelector('.bt-atk b').textContent = d.atk != null ? d.atk : '';
     f.plate.querySelector('.bt-atk').style.display = d.atk != null ? '' : 'none';
@@ -267,6 +274,7 @@ export class BattleScene {
     } else f.pennant.style.display = 'none';
     const glow = d.banner?.field || (d.side === 'hero' ? '#f2c443' : hex(this.theme.accent));
     f.root.style.setProperty('--bt-glow', d.side === 'hero' ? (d.banner?.field || '#f2c443') : (f.boss ? hex(this.theme.accent) : '#e5484d'));
+    f.base.style.setProperty('--bt-glow', d.side === 'hero' ? (d.banner?.field || '#f2c443') : (f.boss ? hex(this.theme.accent) : '#e5484d'));
     f.plate.style.setProperty('--bt-side', d.side === 'hero' ? (d.banner?.field || '#3d6fd6') : (f.boss ? mix(hex(this.theme.accent), '#7a1020', 0.35) : '#b8322e'));
     f.glow = glow;
     f.ko.style.opacity = '0';
@@ -311,10 +319,10 @@ export class BattleScene {
       L.right = { x: W * (B.boss ? 0.62 : 0.67), y: L.bTop + bh * (B.boss ? 0.445 : 0.41), ...box(B, sB) };
       L.left = { x: W * 0.3, y: L.bBot - Math.max(96, sa.b + 70), ...box(A, sA) };
       const pw = Math.min(W * 0.62, 260);
-      L.pw = pw;
+      L.pw = pw; L.pwR = B.boss ? Math.min(W * 0.72, 290) : pw;
       L.plateL = { x: clamp(L.left.x - pw * 0.42, 10 + sa.l, W - pw - 10), y: L.left.y + 6 };
-      L.plateR = { x: clamp(L.right.x - pw * 0.58, 10, W - pw - 10 - sa.r), y: L.right.y + 6 };
-      const top = L.plateR.y + 78, bot = Math.max(top + 130, L.left.y - L.left.h * 0.62);
+      L.plateR = { x: clamp(L.right.x - L.pwR * 0.58, 10, W - L.pwR - 10 - sa.r), y: L.right.y + 6 };
+      const top = L.plateR.y + 74, bot = Math.max(top + 118, L.left.y - L.left.h * 0.86);
       L.dice = { x: W * 0.06, y: top, w: W * 0.88, h: bot - top };
       L.arena = { x: W * 0.5, y: L.dice.y + L.dice.h * 0.62, r: Math.min(W * 0.46, 200) };
     } else {
@@ -330,15 +338,16 @@ export class BattleScene {
       L.left = { x: W * 0.24, y: ground, ...box(A, sA) };
       L.right = { x: W * 0.76, y: ground, ...box(B, sB) };
       const pw = Math.min(W * 0.3, 300);
-      L.pw = pw;
+      L.pw = pw; L.pwR = B.boss ? Math.min(W * 0.34, 330) : pw;
       L.plateL = { x: clamp(L.left.x - pw / 2, 10 + sa.l, W - pw - 10), y: ground + 10 };
-      L.plateR = { x: clamp(L.right.x - pw / 2, 10, W - pw - 10 - sa.r), y: ground + 10 };
+      L.plateR = { x: clamp(L.right.x - L.pwR / 2, 10, W - L.pwR - 10 - sa.r), y: ground + 10 };
       const x0 = L.left.x + L.left.w * 0.42, x1 = L.right.x - L.right.w * 0.42;
       const dw = Math.max(x1 - x0, W * 0.24);
       const dh = Math.min(bh * 0.46, 280);
       L.dice = { x: W / 2 - dw / 2, y: ground - dh + 12, w: dw, h: dh };
       L.arena = { x: W / 2, y: ground - 6, r: Math.min(dw * 0.55, 210) };
     }
+    for (const k of ['left', 'right']) { const q = L[k]; q.x = clamp(q.x, q.w / 2 + 4, W - q.w / 2 - 4); }
     this.L = L;
     // Band + edges
     const band = this.$.band.style;
@@ -355,9 +364,10 @@ export class BattleScene {
       const f = this.F[side], p = L[side];
       const s = f.root.style;
       s.left = `${p.x - p.w / 2}px`; s.top = `${p.y - p.h}px`; s.width = `${p.w}px`; s.height = `${p.h}px`;
+      Object.assign(f.base.style, { left: s.left, top: s.top, width: s.width, height: s.height });
       f.pos = p;
       const pl = side === 'left' ? L.plateL : L.plateR;
-      f.plate.style.left = `${pl.x}px`; f.plate.style.top = `${pl.y}px`; f.plate.style.width = `${L.pw}px`;
+      f.plate.style.left = `${pl.x}px`; f.plate.style.top = `${pl.y}px`; f.plate.style.width = `${side === 'right' ? L.pwR : L.pw}px`;
     }
     // Arena ring
     const ar = this.$.arena.style;
@@ -665,8 +675,15 @@ export class BattleScene {
     this._anims.add(a);
     return a.finished.catch(() => {}).finally(() => this._anims.delete(a));
   }
+  // Cancel script animations on a node (CSS keyframe loops are left alone).
+  _stop(node) {
+    for (const a of node.getAnimations()) if (!(window.CSSAnimation && a instanceof CSSAnimation) && !(window.CSSTransition && a instanceof CSSTransition)) a.cancel();
+  }
   _cancelAll() {
     for (const a of this._anims) { try { a.cancel(); } catch { /* ignore */ } }
+    for (const a of this.root.getAnimations({ subtree: true })) {
+      if (!(window.CSSAnimation && a instanceof CSSAnimation) && !(window.CSSTransition && a instanceof CSSTransition)) a.cancel();
+    }
     this._anims.clear();
     this.root.querySelectorAll('.bt-pop,.bt-skill,.bt-ghostimg').forEach((n) => n.remove());
   }
@@ -788,7 +805,7 @@ export class BattleScene {
     });
     await vsP;
     this.$.vs.style.opacity = '0';
-    this._anims.forEach((a) => { if (a.effect?.target === this.$.vs) a.cancel(); });
+    this._stop(this.$.vs);
   }
 
   // ------------------------------------------------------------- strike
@@ -802,10 +819,10 @@ export class BattleScene {
     const vx = D.x - A.x, vy = D.y - A.y, dist = Math.hypot(vx, vy) || 1;
     const ux = vx / dist, uy = vy / dist;
     const portrait = this.L.portrait;
-    const reach = portrait ? dist * 0.5 : Math.max(20, dist - (atk.pos.w + def.pos.w) * 0.38);
+    const reach = portrait ? dist * (uy < 0 ? 0.5 : 0.36) : Math.max(20, dist - (atk.pos.w + def.pos.w) * 0.38);
     const dx = rm ? ux * 16 : ux * reach, dy = rm ? uy * 16 : uy * reach;
     // Depth cue on the portrait diagonal: shrink going back, grow coming forward.
-    const ds = portrait && !rm ? (uy < 0 ? 0.86 : 1.12) : 1;
+    const ds = portrait && !rm ? (uy < 0 ? 0.86 : 1.06) : 1;
     atk.root.style.zIndex = '6';
     const lean = Math.sign(ux || 1) * 8;
     const blocked = !miss && dmg <= 0;
@@ -829,7 +846,7 @@ export class BattleScene {
     ];
     const dashDur = crit ? 230 : 300;
     if (!rm) this._afterimages(atk, dash, dashDur);
-    this._anims.forEach((a) => { if (a.effect?.target === atk.act) a.cancel(); });
+    this._stop(atk.act);
     const dashAnim = this._a(atk.act, dash, { duration: dashDur, easing: 'cubic-bezier(.4,0,.6,1)', fill: 'forwards' });
     if (miss) {
       // Defender sidesteps just before contact.
@@ -872,7 +889,7 @@ export class BattleScene {
     this._slash(ix, iy, crit ? def.pos.h * 0.75 : def.pos.h * 0.55, ux, crit ? '#ffe27a' : '#ffffff');
     this._burst(ix, iy, crit ? 46 : 26, { color: crit ? '#ffd34a' : '#ffe9c8', speed: crit ? 760 : 520, life: crit ? 0.6 : 0.42, size: crit ? 2.6 : 2 });
     this._star(ix, iy, crit ? 150 : 90, crit ? '#fff2a8' : '#ffffff', crit ? 260 : 180);
-    if (crit) { this._flash('#fff3c4', 0.9, 320); this._ring(ix, iy, 20, def.pos.h * 1.3, '#ffd34a', 1, 460, 4); }
+    if (crit) { this._flash('#fff3c4', 0.7, 300); this._ring(ix, iy, 20, def.pos.h * 1.3, '#ffd34a', 1, 460, 4); }
     else this._flash('#ffffff', 0.25, 140);
     // Hit-stop: everything freezes for a beat on contact.
     this._tintFlash(def, crit ? '#ffffff' : '#ff3030', crit);
@@ -901,7 +918,7 @@ export class BattleScene {
   }
 
   _return(f, dx, dy, lean, dur, stumble = false, ds = 1) {
-    this._anims.forEach((a) => { if (a.effect?.target === f.act) a.cancel(); });
+    this._stop(f.act);
     const kf = this.reducedMotion ? [{ transform: `translate(${dx}px,${dy}px)` }, { transform: 'none' }] : [
       { transform: `translate(${dx}px,${dy}px) scale(${1.08 * ds},${0.95 * ds}) rotate(${lean * 1.2}deg)` },
       stumble ? { transform: `translate(${dx * 1.15}px,${dy * 1.15}px) scale(${ds}) rotate(${lean * 2}deg)`, offset: 0.25 } : { transform: `translate(${dx * 0.9}px,${dy * 0.9 - 10}px) scale(${ds}) rotate(${lean * 0.4}deg)`, offset: 0.2 },
@@ -980,7 +997,7 @@ export class BattleScene {
       { transform: 'translateX(0) scale(1)', opacity: 1, letterSpacing: '0.04em', offset: 0.82 },
       { transform: 'translateY(-12px) scale(1.02)', opacity: 0, letterSpacing: '0.04em' },
     ], { duration: 1500, easing: 'linear' });
-    this._a(gl, [{ transform: 'translateX(-120%) skewX(-20deg)' }, { transform: 'translateX(220%) skewX(-20deg)' }], { duration: 520, delay: 260, easing: 'ease-in-out', fill: 'both' });
+    this._a(gl, [{ transform: 'translateX(-120%) skewX(-20deg)', opacity: 1 }, { transform: 'translateX(340%) skewX(-20deg)', opacity: 1 }], { duration: 520, delay: 260, easing: 'ease-in-out' });
     await ribP;
     n.remove();
   }
@@ -1004,7 +1021,7 @@ export class BattleScene {
       case 'soulburst': await this._koSoul(f); break;
       case 'lightning': await this._koLightning(f); break;
       case 'confetti': await this._koConfetti(f); break;
-      case 'fade': await this._a(f.act, [{ opacity: 1 }, { opacity: 0 }], { duration: 600 }); break;
+      case 'fade': await this._a(f.act, [{ opacity: 1 }, { opacity: 0 }], { duration: 600, fill: 'forwards' }); f.act.style.opacity = '0'; break;
       default: await this._koClassic(f);
     }
     f.act.style.opacity = '0';
@@ -1055,7 +1072,8 @@ export class BattleScene {
       { transform: `translate(${dir * 20}px,6px) rotate(${dir * 22}deg)`, opacity: 1, offset: 0.48 },
       { transform: `translate(${dir * 40}px,${f.pos.h * 0.12}px) rotate(${dir * 78}deg)`, opacity: 0.9, offset: 0.8, easing: 'cubic-bezier(.6,0,1,.6)' },
       { transform: `translate(${dir * 44}px,${f.pos.h * 0.14}px) rotate(${dir * 82}deg)`, opacity: 0 },
-    ], { duration: 1050, easing: 'linear' });
+    ], { duration: 1050, easing: 'linear', fill: 'forwards' });
+    f.act.style.opacity = '0';
     this._dust(f.pos.x + dir * f.pos.w * 0.3, f.pos.y, f.pos.w * 0.8, 22);
     this._shake(0.5, 240);
     await this._wait(250);
@@ -1113,12 +1131,12 @@ export class BattleScene {
     const col = '#9ff3ff';
     // Body drains to a pale silhouette
     this._tintPulse(f, '#c9fbff', 0.9, 700);
-    this._a(f.act, [{ opacity: 1, filter: 'brightness(1)' }, { opacity: 1, filter: 'brightness(1.8) saturate(.2)', offset: 0.5 }, { opacity: 0, filter: 'brightness(2) saturate(0)' }], { duration: 900 });
+    this._a(f.act, [{ opacity: 1, filter: 'brightness(1)' }, { opacity: 1, filter: 'brightness(1.8) saturate(.2)', offset: 0.5 }, { opacity: 0, filter: 'brightness(2) saturate(0)' }], { duration: 900, fill: 'forwards' }).then(() => { f.act.style.opacity = '0'; });
     this._pillar(f, col, 1300);
     await this._wait(380);
     // Spirit rises from the body
     const spirit = this._silhouette(f, '#bff8ff');
-    this._add({ shape: 'spirit', canvas: spirit, mirror: f.mirror, x: r.x + r.w / 2, y: r.y + r.h / 2, w: r.w, h: r.h, vx: 0, vy: -110, life: 1.5, a: 0.85, wob: 1 });
+    this._add({ shape: 'spirit', canvas: spirit, mirror: f.mirror, x: r.x + r.w / 2, y: r.y + r.h / 2, w: r.w, h: r.h, vx: 0, vy: -40, g: -320, life: 1.5, a: 0.95, fadeAt: 0.35, wob: 1 });
     this._ring(feet.x, feet.y, 10, r.w * 1.4, col, 0.32, 900, 5);
     this._ring(mid.x, mid.y, 20, Math.max(r.w, r.h) * 1.2, '#ffffff', 1, 600, 3);
     this._flash('#d0fbff', 0.45, 300);
@@ -1146,7 +1164,7 @@ export class BattleScene {
     this._shake(1.8, 560);
     // Charred silhouette, electric crackle
     f.tint.style.background = '#0b0710';
-    this._a(f.tint, [{ opacity: 0 }, { opacity: 1, offset: 0.1 }, { opacity: 1 }], { duration: 900, fill: 'forwards' });
+    f.tint.style.opacity = '1';
     this._ring(f.pos.x, f.pos.y, 10, r.w * 1.6, '#bcd7ff', 0.3, 520, 5);
     this._burst(c.x, c.y, 40, { color: '#cfe3ff', speed: 820, life: 0.5, size: 2.4 });
     for (let k = 0; k < 6; k++) {
@@ -1155,11 +1173,11 @@ export class BattleScene {
     }
     await this._wait(700);
     // Crumble into ash and embers
-    this._ash(f, r, ['#1a1220', '#3a2c40', '#ff9a3a', '#ffd27a']);
-    this._a(f.tint, [{ opacity: 1 }, { opacity: 1 }], { duration: 10, fill: 'forwards' });
-    await this._a(f.act, [{ opacity: 1, transform: 'none' }, { opacity: 0, transform: 'translateY(6px) scaleY(.9)' }], { duration: 420, easing: 'ease-in' });
+    this._ash(f, r, ['#6a5a70', '#2a2030', '#ff9a3a', '#ffd27a']);
+    await this._a(f.act, [{ opacity: 1, transform: 'none' }, { opacity: 0, transform: 'translateY(6px) scaleY(.9)' }], { duration: 420, easing: 'ease-in', fill: 'forwards' });
+    f.act.style.opacity = '0';
     f.tint.style.opacity = '0';
-    this._anims.forEach((a) => { if (a.effect?.target === f.tint) a.cancel(); });
+    this._stop(f.tint);
     await this._wait(900);
   }
 
@@ -1172,7 +1190,7 @@ export class BattleScene {
       { transform: 'scale(.86,1.2) translateY(-20px) rotate(-10deg)', offset: 0.6 },
       { transform: 'scale(1.3) translateY(-30px) rotate(200deg)', opacity: 1, offset: 0.85 },
       { transform: 'scale(0) translateY(-30px) rotate(360deg)', opacity: 0 },
-    ], { duration: 720, easing: 'ease-in-out' });
+    ], { duration: 720, easing: 'ease-in-out', fill: 'forwards' });
     f.act.style.opacity = '0';
     sfx('ko', 0.6);
     this._flash('#fff6d8', 0.4, 200);
@@ -1258,7 +1276,8 @@ export class BattleScene {
     const loop = (t) => {
       this._raf = 0;
       if (!this._open || document.hidden) return;
-      const dt = Math.min(0.05, (t - this._last) / 1000);
+      // Particles follow the scene speed too (bots fast-forward, tests slow down).
+      const dt = Math.min(0.05, (t - this._last) / 1000) / clamp(this.speed, 0.25, 10) * (this.reducedMotion ? 1.4 : 1);
       this._last = t;
       this._step(dt);
       this._draw();
@@ -1538,14 +1557,14 @@ export class BattleScene {
     return c;
   }
   _ash(f, r, colors) {
-    const n = this.reducedMotion ? 60 : 260;
+    const n = this.reducedMotion ? 60 : 340;
     for (let i = 0; i < n; i++) {
       const u = Math.random(), v = Math.random();
       const s = this._sample(f, u, v);
       if (s[3] < 60) continue;
       const x = r.x + (f.mirror ? 1 - u : u) * r.w, y = r.y + v * r.h;
-      const ember = Math.random() < 0.18;
-      this._add({ shape: ember ? 'glow' : 'dot', x, y, vx: rand(-30, 30) + (f.side === 'left' ? -40 : 40), vy: rand(-140, -30), g: -40, drag: 0.8, life: rand(0.9, 1.8), size: ember ? rand(6, 12) : rand(1.2, 2.6), size1: 1, color: ember ? colors[2 + (i % 2)] : colors[i % 2], blend: ember ? 'lighter' : 'source-over', a: 1, delay: (1 - v) * 0.35 });
+      const ember = Math.random() < 0.32;
+      this._add({ shape: ember ? 'glow' : 'dot', x, y, vx: rand(-30, 30) + (f.side === 'left' ? -40 : 40), vy: rand(-140, -30), g: -40, drag: 0.8, life: rand(0.9, 1.8), size: ember ? rand(8, 16) : rand(1.8, 3.4), size1: 1, color: ember ? colors[2 + (i % 2)] : colors[i % 2], blend: ember ? 'lighter' : 'source-over', a: 1, delay: (1 - v) * 0.35 });
     }
   }
 }
