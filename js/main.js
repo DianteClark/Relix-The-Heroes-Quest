@@ -286,8 +286,10 @@ async function showBeat(type, d) {
         await battle.open({ kind: 'brawl', fighters, theme: theme() });
         return tipFor('pvp', ids.map((id) => game.players[id]).find((q) => !q.isBot));
       }
-      const mover = game.players[d.mover];
-      const other = d.sides.flat().map((id) => game.players[id]).find((q) => q !== mover && !game.sameGuild(q, mover));
+      let mover = game.players[d.mover];
+      let other = d.sides.flat().map((id) => game.players[id]).find((q) => q !== mover && !game.sameGuild(q, mover));
+      // Keep the human on the hero (left) side so "you" never appear as the enemy.
+      if (mover.isBot && !other.isBot) [mover, other] = [other, mover];
       ui.pvpLeft = mover.id; ui.pvpRight = other.id;
       haptics.impact(2);
       await battle.open({ left: fighter(mover), right: { ...fighter(other), side: 'enemy' }, kind: 'pvp', theme: theme() });
@@ -539,19 +541,30 @@ function humanChoose2(p, req) {
     const cardOpts = req.options.filter((o) => o.card);
     const plain = req.options.filter((o) => !o.card);
     const multiHuman = game.players.filter((q) => !q.isBot).length > 1;
-    box.innerHTML = `${multiHuman ? `<div class="who" style="--gcol:${p.banner?.field || '#f2c443'}">${esc(p.name)}</div>` : ''}<h4>${esc(req.title)}</h4>${req.text ? `<p>${esc(req.text)}</p>` : ''}
+    box.innerHTML = `${multiHuman || battle?.isOpen || game.current !== p ? `<div class="who" style="--gcol:${p.banner?.field || '#f2c443'}">${esc(p.name)}</div>` : ''}<h4>${esc(req.title)}</h4>${req.text ? `<p>${esc(req.text)}</p>` : ''}
       ${req.kind === 'move' ? '<p class="hint">Tap a glowing tile or a button.</p>' : req.options.some((o) => o.player != null) ? '<p class="hint">Tap a player below or their glowing tile.</p>' : ''}
       ${cardOpts.length ? `<div class="opt-cards">${cardOpts.map((o) => `<button class="opt-card" data-o="${o.id}" aria-label="${esc(o.label)}">${treasureCard(o.card.id)}<span>${esc(o.label)}</span></button>`).join('')}</div>` : ''}
       <div class="opts">${plain.map((o) => `<button class="opt ${o.primary ? 'primary' : ''}" data-o="${o.id}">${esc(o.label)}${o.desc ? `<small>${esc(o.desc)}</small>` : ''}</button>`).join('')}</div>`;
     box.classList.remove('hidden');
     document.body.classList.add('prompting');
+    document.body.classList.toggle('battle-open', !!battle?.isOpen);
+    // Reserve the space the prompt takes so glowing tiles stay above it.
+    requestAnimationFrame(() => {
+      if (!view?.setSafeArea || battle?.isOpen) return;
+      const pr = box.getBoundingClientRect();
+      const top = ($('#players')?.getBoundingClientRect().bottom || 120) + 6;
+      const left = innerWidth > 700 ? ($('#others')?.getBoundingClientRect().right || 0) + 6 : 0;
+      view.setSafeArea({ top, bottom: innerHeight - pr.top + 6, left, right: 0 });
+      view.overview?.(300);
+    });
     haptics.select();
     let done = false;
     const finish = (id) => {
       if (done) return;
       done = true;
       box.classList.add('hidden');
-      document.body.classList.remove('prompting');
+      document.body.classList.remove('prompting', 'battle-open');
+      view?.setSafeArea?.(null);
       view.clearHighlight();
       haptics.tap();
       sfx('tap');
@@ -660,11 +673,12 @@ function showEnd(r) {
     ['Relic Hoarder', top((p) => p.relics.length), (p) => `${p.relics.length} Relics`],
     ['Unkillable', ps.reduce((a, b) => (b.deaths < a.deaths ? b : a), ps[0]), (p) => `${p.deaths} deaths`],
   ];
+  const shownAwards = awards.filter(([t, p]) => (t === 'Slayer' ? p.kills > 0 : t === 'Relic Hoarder' ? p.relics.length > 0 : true));
   $('#endBox').innerHTML = `<canvas id="confetti"></canvas>
     <h1 class="${r.kind === 'loss' ? 'loss' : ''}">${r.kind === 'loss' ? 'Defeat' : 'Victory!'}</h1>
     <p class="end-text">${esc(r.text)}</p>
     <div class="podium">${order.join('')}</div>
-    <div class="awards">${awards.map(([t, p, f]) => `<div class="award"><span class="aw-face" style="background-image:url(${artUrl(heroDef(p.hero).art)})"></span><b>${t}</b><small>${esc(p.name)} · ${f(p)}</small></div>`).join('')}</div>
+    <div class="awards">${shownAwards.map(([t, p, f]) => `<div class="award"><span class="aw-face" style="background-image:url(${artUrl(heroDef(p.hero).art)})"></span><b>${t}</b><small>${esc(p.name)} · ${f(p)}</small></div>`).join('')}</div>
     ${ranked.length > 3 ? `<div>${ranked.slice(3).map((sc, i) => `<div class="score"><b>${i + 4}. ${esc(sc.label)}</b>${gems(sc.relics)}</div>`).join('')}</div>` : ''}
     ${res ? `<div class="xp-box"><div class="xp-lv">Lv ${res.after.level}</div><div class="xp-bar"><i style="width:${Math.round((res.before.level === res.after.level ? res.before.frac : 0) * 100)}%" data-to="${Math.round(res.after.frac * 100)}"></i></div><b>+${res.xp} XP</b></div>` : ''}
     ${coins ? `<p class="coins-won">+${coins} Relix Coins</p>` : ''}

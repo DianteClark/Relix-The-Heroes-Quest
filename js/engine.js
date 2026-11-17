@@ -519,11 +519,13 @@ export class Game {
     const joined = [];
     for (const q of invited) {
       const yes = await this.decide(q, { kind: 'guild_accept', title: `${p.name} invites you to join ${gname}`, text: 'Guilds are permanent until disbanded. Guild Relics count together at the end.', options: [{ id: 'yes', label: 'Accept', primary: true }, { id: 'no', label: 'Decline' }], from: p.id, guildName: gname });
-      if (yes === 'yes') joined.push(q);
+      if (yes === 'yes' && q.guild == null) joined.push(q);
       this.log(`${q.name} ${yes === 'yes' ? 'accepts' : 'declines'} the invitation.`, 'guild');
     }
     if (!joined.length) { this.log('Nobody joined, so the banner is wasted.', 'guild'); return; }
     const g = { id: slot, name: gname, color: (p.banner && p.banner.field) || GUILD_COLORS[slot % GUILD_COLORS.length], banner: p.banner, leader: p.id };
+    this.guilds.push(g);
+    for (const q of [p, ...joined]) q.guild = g.id;
     this.log(`The guild ${g.name} is formed, led by ${p.name}: ${[p, ...joined].map((q) => q.name).join(', ')}.`, 'guild');
     this.emit('guilds');
   }

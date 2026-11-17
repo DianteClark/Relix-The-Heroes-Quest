@@ -386,3 +386,12 @@ body.prompting #me .me-row { display: none; }
   .me-top b { font-size: 15px; } .me-cards { width: 44px; padding: 2px; }
   #ticker { display: none; }
 }
+
+/* QA fixes */
+.opt-cards { flex-wrap: wrap; justify-content: center; overflow: visible; }
+.opt-card .card { width: 78px; }
+.ochip .bar.hp { height: 13px; } .ochip .bar.hp b { font-size: 9px; line-height: 13px; }
+/* During battles, the prompt floats over the arena centre instead of covering your fighter. */
+body.battle-open #bottom { top: 50%; bottom: auto; transform: translateY(-50%); z-index: 45; }
+body.battle-open #me, body.battle-open #ticker { display: none; }
+body.battle-open #prompt { max-height: 46vh; overflow-y: auto; box-shadow: 0 6px 0 var(--inkc), 0 0 0 100vmax rgba(10,6,16,.25); }
