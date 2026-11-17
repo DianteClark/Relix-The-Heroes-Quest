@@ -227,7 +227,9 @@ async function showBeat(type, d) {
       return tipFor('trap', p);
     case 'floorIntro':
       try { audio.music('floor' + d.floor); } catch { /* ignore */ }
-      return flow.floor(d.floor, game.boss.def, { human: anyHuman() });
+      await flow.floor(d.floor, game.boss.def, { human: anyHuman() });
+      if (view.introSweep) await view.introSweep(game.speed);
+      return;
     case 'bossSkill':
       if (battle?.isOpen) await battle.skill('right', `${game.boss.def.name.toUpperCase()}'S SKILL!`);
       return flow.bossSkill(game.boss.def);
@@ -396,7 +398,7 @@ function onEvent(type, d) {
       if (d.dealt) view.hitEnemy();
       break;
     case 'skill': view.flash(d.player, 'skill'); break;
-    case 'fx': view.fx(d.kind, d.at); if (d.kind === 'bomb' || d.kind === 'yessi') { sfx('crit'); haptics.impact(2); } break;
+    case 'fx': view.fx(d.kind, d.at); if (d.kind === 'bomb' || d.kind === 'yessi') { sfx('crit'); haptics.impact(2); view.shake?.(0.6); } break;
     case 'trap': view.fx('trap', game.players[d.player].pos); break;
     case 'combat': view.showEnemy(game.players[d.player].pos, d.boss ? null : d.enemy.art, d.boss); break;
     case 'combatEnd': view.hideEnemy(); break;

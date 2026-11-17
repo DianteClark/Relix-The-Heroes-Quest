@@ -369,3 +369,20 @@ body.prompting #me .me-row { display: none; }
 .pod.p1 .pod-step { background: linear-gradient(#ffd23f, #e0a51c); } .pod.p1 .pod-step span { color: #2a1a05; } .pod.p1 .pod-step b { color: #fff; -webkit-text-stroke: 3px var(--inkc); paint-order: stroke fill; }
 .end-stats { color: #fff; text-shadow: 0 1px 0 var(--inkc); }
 .coins-won { -webkit-text-stroke: 4px var(--inkc); paint-order: stroke fill; }
+@media (orientation: landscape) and (max-height: 520px) {
+  #topbar { padding: calc(var(--st) + 4px) calc(var(--sr) + 8px) 4px calc(var(--sl) + 10px); gap: 8px; background: linear-gradient(rgba(8,5,14,.85), rgba(8,5,14,0)); }
+  #topbar .floor b { font-size: 15px; }
+  .boss-mini { flex: 0 1 300px; min-height: 36px; padding: 2px 8px 2px 2px; }
+  .boss-mini .face { width: 30px; height: 30px; }
+  .icon-btn { min-width: 36px; height: 36px; }
+  #players { top: calc(var(--st) + 4px); left: auto; right: calc(var(--sr) + 54px); width: auto; padding: 2px 4px; }
+  .tface { width: 30px; height: 30px; border-width: 2px; } .tface.turn { width: 36px; height: 36px; }
+  .tface .gflag { display: none; }
+  #others { top: calc(var(--st) + 50px); width: 112px; gap: 3px; }
+  .ochip { padding: 2px 4px 2px 2px; } .ochip .ph { width: 26px; height: 26px; } .ochip .row { display: none; }
+  #bottom { align-items: flex-start; }
+  #me { width: min(300px, 38vw); }
+  .me { padding: 4px 6px; gap: 6px; } .me-ph { width: 38px; height: 38px; } .me-row { display: none; }
+  .me-top b { font-size: 15px; } .me-cards { width: 44px; padding: 2px; }
+  #ticker { display: none; }
+}
