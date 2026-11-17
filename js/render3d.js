@@ -457,6 +457,7 @@ export class BoardView {
       if (o.geometry && !o.isSprite && !o.userData.sharedGeo) o.geometry.dispose();
     });
     if (this.tex) for (const t of Object.values(this.tex)) t.dispose();
+    if (this._hitGeo) this._hitGeo.dispose();
     if (this.mats) for (const m of Object.values(this.mats)) m.dispose();
     this.world.clear();
   }
@@ -471,22 +472,31 @@ export class BoardView {
   buildRoom(pal) {
     const bb = this.bbox, R = this.R;
     // Walls are placed past every sprite's extent in both framings (+ torches).
-    let minX = bb.min.x - 2.3, minZ = bb.min.z - 2.3, maxXs = bb.max.x + 2.3;
+    let minX = bb.min.x - 2.3, minZ = bb.min.z - 2.3;
     for (const mode of ['iso', 'stage']) for (const p of this.spriteHull[mode]) { minX = Math.min(minX, p.x - 0.75); minZ = Math.min(minZ, p.z - 0.75); }
-    for (const p of this.spriteHull.stage) maxXs = Math.max(maxXs, p.x + 0.75);
-    this.room = { wx: minX, wz: minZ, ex: maxXs, fz: bb.max.z + 1.9, fx: bb.max.x + 1.9 };
+    this.room = { wx: minX, wz: minZ, ex: bb.max.x + 2.3, fz: bb.max.z + 1.9, fx: bb.max.x + 1.9 };
     const room = this.room;
 
     // floor
-    const floorGeo = new THREE.PlaneGeometry(140, 140);
-    floorGeo.rotateX(-Math.PI / 2);
-    const fuv = floorGeo.attributes.uv;
-    for (let i = 0; i < fuv.count; i++) fuv.setXY(i, fuv.getX(i) * 140 / 7, fuv.getY(i) * 140 / 7);
-    this.tex.floor.repeat.set(1, 1);
-    const floor = new THREE.Mesh(floorGeo, A.toon({ map: this.tex.floor }));
-    floor.receiveShadow = true;
-    this.world.add(floor);
-    this.mats.floor = floor.material;
+    // Floor: stops at the back walls in the iso view (sky shows above them);
+    // runs out sideways in the stage view where the side walls are edge-on.
+    this.mats.floor = A.toon({ map: this.tex.floor });
+    const floorMesh = (x0, x1, z0, z1) => {
+      const g = new THREE.PlaneGeometry(x1 - x0, z1 - z0);
+      g.rotateX(-Math.PI / 2);
+      g.translate((x0 + x1) / 2, 0, (z0 + z1) / 2);
+      const pos = g.attributes.position, uv = g.attributes.uv;
+      for (let i = 0; i < uv.count; i++) uv.setXY(i, pos.getX(i) / 7, -pos.getZ(i) / 7);
+      const m = new THREE.Mesh(g, this.mats.floor);
+      m.receiveShadow = true;
+      this.world.add(m);
+      return m;
+    };
+    this.floors = {
+      iso: floorMesh(room.wx - WALL_T, room.wx + 90, room.wz - WALL_T, room.wz + 90),
+      stage: floorMesh(-90, 90, room.wz - WALL_T, room.wz + 90),
+    };
+
 
     // shadow camera covers the room
     const cx = (room.wx + room.ex) / 2, cz = (room.wz + room.fz) / 2;
@@ -502,10 +512,10 @@ export class BoardView {
     // north (back) wall spans x; west wall spans z; east wall only for the stage framing
     this.walls.north = this.buildWall(pal, room.wx - WALL_T, room.ex + far, room.wz, 'z');
     this.walls.west = this.buildWall(pal, room.wz - WALL_T, room.fz + far, room.wx, 'x');
-    this.walls.east = this.buildWall(pal, room.wz - WALL_T, room.fz + far, room.ex, 'x', -1);
+    this.walls.northExt = this.buildWall(pal, room.wx - far, room.wx - WALL_T, room.wz, 'z');
     // low boulder edge on the open front sides
-    this.edges = { south: new THREE.Group(), east: new THREE.Group() };
-    for (const [key, a0, a1, fixed, axis] of [['south', room.wx, room.ex + far, room.fz, 'z'], ['east', room.wz, room.fz + far, room.fx, 'x']]) {
+    this.edges = { south: new THREE.Group(), east: new THREE.Group(), southExt: new THREE.Group() };
+    for (const [key, a0, a1, fixed, axis] of [['south', room.wx, room.ex + far, room.fz, 'z'], ['east', room.wz, room.fz + far, room.fx, 'x'], ['southExt', room.wx - far, room.wx, room.fz, 'z']]) {
       const b = new A.Batcher();
       for (let a = a0 + 0.3; a < a1; a += 0.55 + R() * 0.25) {
         const pr = A.boulder(pal, 0.2 + R() * 0.1, R);
@@ -541,8 +551,8 @@ export class BoardView {
       b.add(new THREE.DodecahedronGeometry(s, 0), place(a, WALL_H + s * 0.35, -WALL_T / 2).multiply(new THREE.Matrix4().compose(new THREE.Vector3(), new THREE.Quaternion().setFromEuler(new THREE.Euler(R(), R() * 6, R())), new THREE.Vector3(1.25, 0.8, 0.95))), { color: R() < 0.5 ? pal.cap : A.shade(pal.cap, -0.06), ink: 0.035, flat: true });
     }
     // decorations along the inner face, only over the room itself
-    const roomA0 = axis === 'z' ? this.room.wx : this.room.wz;
-    const roomA1 = axis === 'z' ? this.room.ex + 6 : this.room.fz + 6;
+    const roomA0 = Math.max(a0, axis === 'z' ? this.room.wx : this.room.wz);
+    const roomA1 = Math.min(a1, axis === 'z' ? this.room.ex + 6 : this.room.fz + 6);
     const banner = (this.tex.banner ||= A.bannerTex(pal));
     const win = (pal.key === 'sanctum' || pal.key === 'forge' || pal.key === 'hive') ? (this.tex.window ||= A.windowTex(pal)) : null;
     let k = 0;
@@ -594,7 +604,7 @@ export class BoardView {
     const [caps, sides] = splitGroups(slab);
     const b = new A.Batcher();
     const top = new THREE.Color(pal.tile), rim = new THREE.Color(A.shade(pal.tile, 0.05)), side = new THREE.Color(pal.tileSide), deep = new THREE.Color(pal.tileDeep);
-    const hitGeo = new THREE.BoxGeometry(T + 0.2, 0.7, T + 0.2);
+    const hitGeo = this._hitGeo = new THREE.BoxGeometry(T + 0.2, 0.7, T + 0.2);
     const hitMat = new THREE.MeshBasicMaterial({ visible: false });
     const arrowShape = new THREE.Shape(); arrowShape.moveTo(-0.12, -0.1); arrowShape.lineTo(0.14, 0); arrowShape.lineTo(-0.12, 0.1); arrowShape.lineTo(-0.06, 0); arrowShape.closePath();
     const arrowGeo = new THREE.ShapeGeometry(arrowShape); arrowGeo.rotateX(-Math.PI / 2);
@@ -884,10 +894,13 @@ export class BoardView {
   applyMode() {
     if (!this.board) return;
     const B = this.B, stage = this.mode === 'stage';
-    this.walls.west.visible = true;
-    this.walls.west.userData.deco.visible = !stage;
-    this.walls.east.visible = stage;
+    this.floors.iso.visible = !stage;
+    this.floors.stage.visible = stage;
+    // stage view: one long back wall, no side walls (they'd be edge-on)
+    this.walls.west.visible = !stage;
+    this.walls.northExt.visible = stage;
     this.edges.east.visible = !stage;
+    this.edges.southExt.visible = stage;
     // stickers + START label oriented to read upright on screen
     if (this.stickerMesh) { this.world.remove(this.stickerMesh); this.stickerMesh.geometry.dispose(); }
     const b = new A.Batcher();

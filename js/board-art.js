@@ -286,8 +286,8 @@ export function floorTex(pal, seed = 3) {
     const base = R() < 0.5 ? pal.floor : pal.floorAlt;
     paintStone(g, ch, shade(base, (R() - 0.5) * 0.03), R, { lw: 5, hl: 0.045, sh: -0.05, band: 0.06, ink: pal.floorLine });
     g.save(); poly(g, ch); g.clip();
-    if (R() < 0.45) crack(g, ctr[0] + (R() - 0.5) * 120, ctr[1] + (R() - 0.5) * 120, 80 + R() * 60, R, 5);
-    for (let k = 0; k < 10; k++) { g.fillStyle = shade(base, -0.05); g.beginPath(); g.arc(ctr[0] + (R() - 0.5) * 200, ctr[1] + (R() - 0.5) * 200, 2 + R() * 5, 0, 7); g.fill(); }
+    if (R() < 0.18) crack(g, ctr[0] + (R() - 0.5) * 120, ctr[1] + (R() - 0.5) * 120, 70 + R() * 50, R, 4);
+    for (let k = 0; k < 5; k++) { g.fillStyle = shade(base, -0.05); g.beginPath(); g.arc(ctr[0] + (R() - 0.5) * 200, ctr[1] + (R() - 0.5) * 200, 2 + R() * 5, 0, 7); g.fill(); }
     if (R() < 0.35) themeSpeck(g, pal, ch[0][0] + 30, ch[0][1] + 30, 18, R);
     g.restore();
   }
