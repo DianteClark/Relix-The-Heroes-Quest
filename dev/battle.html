@@ -1,0 +1,148 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
+  <title>Relix dev: BattleScene</title>
+  <link rel="icon" href="data:,">
+  <link rel="stylesheet" href="../css/style.css">
+  <link rel="stylesheet" href="../css/battle.css">
+  <style>
+    body { overflow: hidden; }
+    /* stand-in board so the dim is visible */
+    #fakeBoard { position: fixed; inset: 0; display: grid; grid-template-columns: repeat(6, 1fr); gap: 6px; padding: 70px 10px 120px; background: radial-gradient(#2a2238, #120c1a); }
+    #fakeBoard div { border-radius: 10px; background-size: cover; background-position: center; box-shadow: 0 3px 0 #000; }
+    #dev { position: fixed; left: 0; right: 0; bottom: 0; z-index: 100; padding: 6px 8px calc(6px + env(safe-area-inset-bottom)); background: rgba(10, 6, 16, .92); border-top: 1px solid #4a3d5e; max-height: 46vh; overflow-y: auto; font-size: 12px; }
+    #dev.collapsed .rows { display: none; }
+    #dev h4 { margin: 6px 0 3px; font-size: 11px; letter-spacing: 1px; color: #b7a9c9; text-transform: uppercase; }
+    #dev .row { display: flex; flex-wrap: wrap; gap: 5px; }
+    #dev button, #dev select, #dev label { min-height: 44px; font: 800 12px Nunito, sans-serif; border-radius: 8px; border: 1px solid #4a3d5e; background: #2a2238; color: #f4ecdf; padding: 0 10px; }
+    #dev label { display: inline-flex; align-items: center; gap: 4px; }
+    #dev button.gold { background: linear-gradient(#ffe27a, #e0a51c); color: #2a1a05; border-color: #8a5a0a; }
+    #toggle { position: fixed; right: 8px; top: calc(8px + env(safe-area-inset-top)); z-index: 101; min-height: 44px; min-width: 44px; border-radius: 10px; border: 1px solid #4a3d5e; background: rgba(10,6,16,.9); color: #f2c443; font: 900 12px Nunito; padding: 0 10px; }
+    #diceRect { position: fixed; z-index: 99; border: 2px dashed #4fd17a; pointer-events: none; display: none; }
+    #sfxLog { position: fixed; left: 8px; top: calc(8px + env(safe-area-inset-top)); z-index: 101; font: 800 11px Nunito; color: #4fd17a; pointer-events: none; text-shadow: 0 1px 2px #000; }
+    .hidedev #dev, .hidedev #toggle, .hidedev #sfxLog { display: none; }
+  </style>
+</head>
+<body>
+  <div id="fakeBoard"></div>
+  <div id="diceRect"></div>
+  <div id="sfxLog"></div>
+  <button id="toggle">Controls</button>
+  <div id="dev">
+    <div class="rows">
+      <h4>Open</h4>
+      <div class="row">
+        <select id="hero"></select>
+        <select id="monster"></select>
+        <button class="gold" id="openMonster">Hero vs Monster</button>
+        <button class="gold" id="openPvp">PvP</button>
+      </div>
+      <div class="row" id="bossRow"></div>
+      <h4>Strike</h4>
+      <div class="row">
+        <button data-strike="left">L hits</button>
+        <button data-strike="right">R hits</button>
+        <button data-strike="left" data-crit>L crit</button>
+        <button data-strike="right" data-crit>R crit</button>
+        <button data-strike="left" data-miss>L miss</button>
+        <button data-strike="right" data-miss>R miss</button>
+        <button data-strike="left" data-block>L blocked</button>
+        <button data-strike="right" data-block>R blocked</button>
+      </div>
+      <h4>Skill / HP</h4>
+      <div class="row">
+        <button data-skill="left|RAGE! +8 DMG">Rage</button>
+        <button data-skill="left|SHIELD −3">Shield</button>
+        <button data-skill="left|HEAL +4">Heal</button>
+        <button data-skill="right|BONE CRUSH +5">Boss skill</button>
+        <button id="heal">L +10 HP</button>
+      </div>
+      <h4>Defeat</h4>
+      <div class="row" id="koRow"></div>
+      <h4>Other</h4>
+      <div class="row">
+        <button class="gold" id="demo">Full demo</button>
+        <button id="close">Close</button>
+        <button id="showDice">Show diceArea</button>
+        <label><input type="checkbox" id="rm"> Reduced motion</label>
+        <select id="speed"><option value="1">Speed 1x</option><option value="0.5">Fast (0.5)</option><option value="0.25">Turbo</option><option value="0">Instant</option></select>
+      </div>
+    </div>
+  </div>
+  <script type="module">
+    import { BattleScene } from '../js/battle.js';
+    import { HEROES, MONSTERS, BOSSES } from '../js/data.js';
+    import { KILL_FX, SEAT_BANNERS, DEFAULT_BANNER } from '../js/cosmetics.js';
+
+    const $ = (s) => document.querySelector(s);
+    if (new URLSearchParams(location.search).has('hide')) document.body.classList.add('hidedev');
+    // fake board
+    const tiles = ['start', 'monster', 'treasure', 'trap'];
+    for (let i = 0; i < 36; i++) { const d = document.createElement('div'); d.style.backgroundImage = `url(../assets/tiles/${tiles[(i * 7) % 4]}.webp)`; $('#fakeBoard').appendChild(d); }
+
+    const scene = new BattleScene();
+    window.scene = scene;
+    window.BOSSES = BOSSES; window.HEROES = HEROES; window.MONSTERS = MONSTERS;
+    const sfxSeen = [];
+    window.sfxSeen = sfxSeen;
+    window.addEventListener('relix:sfx', (e) => { sfxSeen.push(e.detail.name); $('#sfxLog').textContent = `sfx: ${sfxSeen.slice(-6).join(' · ')}`; });
+
+    HEROES.forEach((h) => $('#hero').add(new Option(h.short || h.name, h.id)));
+    MONSTERS.forEach((m) => $('#monster').add(new Option(m.name, m.id)));
+    const heroData = (id = $('#hero').value, banner = { ...DEFAULT_BANNER }) => {
+      const h = HEROES.find((x) => x.id === id);
+      return { id: h.id, name: h.short || h.name, art: h.art, hp: 62, maxHp: 80, atk: h.atk, side: 'hero', banner };
+    };
+    window.heroData = heroData;
+    window.openMonster = (heroId, monId, themeIdx = 0) => {
+      const m = MONSTERS.find((x) => x.id === monId);
+      return scene.open({ left: heroData(heroId), right: { id: m.id, name: m.name, art: m.art, hp: m.hp, maxHp: m.hp, atk: m.atk, side: 'enemy' }, kind: 'monster', theme: BOSSES[themeIdx].theme });
+    };
+    window.openBoss = (i, heroId) => {
+      const b = BOSSES[i];
+      return scene.open({ left: heroData(heroId), right: { id: b.id, name: b.name, art: b.art, hp: b.hp, maxHp: b.hp, atk: b.atk, side: 'enemy' }, kind: 'boss', theme: b.theme });
+    };
+    window.openPvp = (a = 'chan_kong', b = 'yessi') => {
+      const h2 = HEROES.find((x) => x.id === b);
+      return scene.open({ left: heroData(a), right: { id: h2.id, name: h2.short || h2.name, art: h2.art, hp: 47, maxHp: 80, atk: 1, side: 'hero', banner: SEAT_BANNERS[0] }, kind: 'pvp', theme: BOSSES[4].theme });
+    };
+    $('#openMonster').onclick = () => openMonster($('#hero').value, $('#monster').value, 0);
+    $('#openPvp').onclick = () => openPvp($('#hero').value, $('#hero').value === 'yessi' ? 'luke' : 'yessi');
+    BOSSES.forEach((b, i) => { const btn = document.createElement('button'); btn.className = 'gold'; btn.textContent = `Boss: ${b.name}`; btn.onclick = () => openBoss(i, $('#hero').value); $('#bossRow').appendChild(btn); });
+    KILL_FX.forEach((k) => { const btn = document.createElement('button'); btn.textContent = `KO R: ${k.name}`; btn.onclick = () => scene.defeat('right', k.id); $('#koRow').appendChild(btn); });
+    const kl = document.createElement('button'); kl.textContent = 'KO L: Classic'; kl.onclick = () => scene.defeat('left', 'none'); $('#koRow').appendChild(kl);
+
+    document.querySelectorAll('[data-strike]').forEach((b) => b.onclick = () => {
+      const crit = b.hasAttribute('data-crit'), miss = b.hasAttribute('data-miss'), block = b.hasAttribute('data-block');
+      scene.strike(b.dataset.strike, { dmg: block ? 0 : crit ? 4 : 2, crit, miss });
+    });
+    document.querySelectorAll('[data-skill]').forEach((b) => b.onclick = () => { const [s, t] = b.dataset.skill.split('|'); scene.skill(s, t); });
+    $('#heal').onclick = () => scene.setHp('left', scene.F.left.hp + 10);
+    $('#close').onclick = () => scene.close();
+    $('#showDice').onclick = () => {
+      const r = scene.diceArea(), d = $('#diceRect');
+      d.style.display = d.style.display === 'block' ? 'none' : 'block';
+      Object.assign(d.style, { left: `${r.x}px`, top: `${r.y}px`, width: `${r.width}px`, height: `${r.height}px` });
+    };
+    $('#rm').onchange = (e) => { scene.reducedMotion = e.target.checked || null; };
+    $('#speed').onchange = (e) => { scene.speed = +e.target.value; };
+    $('#toggle').onclick = () => $('#dev').classList.toggle('collapsed');
+
+    window.demo = async () => {
+      await openBoss(2, 'chan_kong');
+      await scene.skill('left', 'RAGE! +8 DMG');
+      await scene.strike('left', { dmg: 11, crit: true });
+      await scene.strike('right', { dmg: 2 });
+      await scene.strike('left', { miss: true });
+      await scene.strike('right', { dmg: 0 });
+      await scene.strike('left', { dmg: 19 });
+      await scene.defeat('right', 'lightning');
+      await new Promise((r) => setTimeout(r, 500));
+      await scene.close();
+    };
+    $('#demo').onclick = () => window.demo();
+  </script>
+</body>
+</html>
