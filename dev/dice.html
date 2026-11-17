@@ -1,0 +1,133 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Relix · Dice tray test bench</title>
+<link rel="stylesheet" href="../css/style.css">
+<link rel="stylesheet" href="../css/dice.css">
+<style>
+  body { background: radial-gradient(ellipse at 50% 35%, #3a2652 0%, #16121f 75%); overflow: hidden; }
+  .board { position: fixed; inset: 0; background: url(../assets/tiles/monster.webp) center / 140px repeat; opacity: .13; filter: saturate(.6); }
+  .fighters { position: fixed; left: 0; right: 0; top: 30%; height: 34%; display: none; justify-content: space-between; align-items: flex-end; padding: 0 2vw; pointer-events: none; }
+  .fighters.on { display: flex; }
+  .fighters img { height: 100%; max-width: 38vw; object-fit: contain; filter: drop-shadow(0 10px 18px rgba(0,0,0,.6)); }
+  .fighters img.r { transform: scaleX(-1); }
+  .gap { position: fixed; border: 1px dashed rgba(242,196,67,.35); pointer-events: none; display: none; }
+  .bench { position: fixed; left: 0; right: 0; top: 0; padding: calc(env(safe-area-inset-top, 0px) + 6px) 8px 6px; z-index: 50;
+    background: linear-gradient(rgba(16,12,24,.92), rgba(16,12,24,.75)); border-bottom: 1px solid var(--line); font-size: 12px; }
+  .bench .row { display: flex; flex-wrap: wrap; gap: 4px; align-items: center; margin-bottom: 4px; }
+  .bench .row b { width: 44px; color: var(--muted); font-weight: 800; }
+  .bench button { min-height: 30px; min-width: 30px; padding: 4px 8px; border-radius: 8px; border: 1px solid var(--line); background: #241c32; color: var(--text); font: 800 12px var(--ui); cursor: pointer; }
+  .bench button.on { background: var(--gold); color: #2a1a05; border-color: var(--gold); }
+  .bench .go { background: linear-gradient(#ffe27a, #e0a51c); color: #2a1a05; font-family: var(--title); font-size: 15px; letter-spacing: 1px; padding: 6px 16px; }
+  #out { position: fixed; left: 8px; right: 8px; bottom: calc(env(safe-area-inset-bottom, 0px) + 6px); z-index: 50; font: 700 12px var(--ui); color: var(--muted); text-shadow: 0 1px 2px #000; pointer-events: none; }
+  .bench.min .row:not(:first-child) { display: none; }
+</style>
+</head>
+<body>
+<div class="board"></div>
+<div class="fighters" id="fighters"><img src="../assets/chars/brevha.webp" alt=""><img class="r" src="../assets/chars/golem_1.webp" alt=""></div>
+<div class="gap" id="gap"></div>
+<div class="bench" id="bench">
+  <div class="row"><button class="go" id="roll">Roll</button><button id="v">Verify values</button><button id="min">–</button><span id="stat"></span></div>
+  <div class="row" data-k="skin"><b>Skin</b></div>
+  <div class="row" data-k="fx"><b>FX</b></div>
+  <div class="row" data-k="n"><b>Dice</b></div>
+  <div class="row" data-k="kind"><b>Kind</b></div>
+  <div class="row" data-k="mode"><b>Mode</b></div>
+  <div class="row" data-k="area"><b>Area</b></div>
+  <div class="row" data-k="speed"><b>Speed</b></div>
+  <div class="row" data-k="vals"><b>Values</b></div>
+</div>
+<div id="out"></div>
+<script type="module">
+import { DiceTray, planRoll, readTop } from '../js/dice3d.js';
+import { DICE_SKINS, THROW_FX } from '../js/cosmetics.js';
+import * as THREE from '../vendor/three.module.min.js';
+
+const q = new URLSearchParams(location.search);
+const st = { skin: q.get('skin') || 'bone', fx: q.get('fx') || 'sparks', n: +(q.get('n') || 2), kind: q.get('kind') || 'combat',
+  mode: q.get('mode') || 'auto', area: q.get('area') || 'centre', speed: +(q.get('speed') || 1), vals: q.get('vals') || 'random' };
+const opts = {
+  skin: DICE_SKINS.map((s) => [s.id, s.name]), fx: THROW_FX.map((f) => [f.id, f.name]), n: [1, 2, 3, 4, 5, 6].map((n) => [n, n]),
+  kind: ['combat', 'skill', 'move', 'pvp', 'plain'].map((k) => [k, k]), mode: [['auto', 'auto (bot)'], ['swipe', 'swipe (human)']],
+  area: [['centre', 'centre'], ['battle', 'battle gap']], speed: [[1, '1'], [0.5, '0.5'], [0.15, '0.15'], [0.02, 'instant']],
+  vals: [['random', 'random'], ['six', 'all 6'], ['one', 'all 1']],
+};
+for (const [k, list] of Object.entries(opts)) {
+  const row = document.querySelector(`[data-k="${k}"]`);
+  for (const [id, name] of list) {
+    const b = document.createElement('button'); b.textContent = name; b.dataset.id = id;
+    b.onclick = () => { st[k] = typeof st[k] === 'number' ? +id : id; sync(); };
+    row.appendChild(b);
+  }
+}
+function sync() {
+  for (const k of Object.keys(opts)) document.querySelectorAll(`[data-k="${k}"] button`).forEach((b) => b.classList.toggle('on', String(st[k]) === b.dataset.id));
+  document.getElementById('fighters').classList.toggle('on', st.area === 'battle');
+}
+sync();
+document.getElementById('min').onclick = () => document.getElementById('bench').classList.toggle('min');
+if (q.has('min')) document.getElementById('bench').classList.add('min');
+
+const tray = new DiceTray();
+window.tray = tray;
+const out = document.getElementById('out');
+const sfxLog = [];
+window.addEventListener('relix:sfx', (e) => { sfxLog.push(e.detail); });
+window.sfxLog = sfxLog;
+
+function battleGap() {
+  const imgs = document.querySelectorAll('#fighters img');
+  const a = imgs[0].getBoundingClientRect(); const b = imgs[1].getBoundingClientRect();
+  const left = a.left + a.width * 0.72; const right = b.left + b.width * 0.28;
+  const top = a.top + a.height * 0.35; const h = a.height * 0.7;
+  const r = new DOMRect(left, top, Math.max(80, right - left), h);
+  const g = document.getElementById('gap'); Object.assign(g.style, { display: 'block', left: r.left + 'px', top: r.top + 'px', width: r.width + 'px', height: r.height + 'px' });
+  return r;
+}
+function values() {
+  if (st.vals === 'six') return Array(st.n).fill(6);
+  if (st.vals === 'one') return Array(st.n).fill(1);
+  return Array.from({ length: st.n }, () => 1 + Math.floor(Math.random() * 6));
+}
+async function roll(over = {}) {
+  const v = over.values || values();
+  document.getElementById('gap').style.display = 'none';
+  const area = st.area === 'battle' ? battleGap() : null;
+  out.textContent = `rolling ${v.join(' ')} …`;
+  const t0 = performance.now();
+  const res = await tray.roll({ values: v, mode: st.mode, kind: st.kind, triggers: [5, 6], label: st.kind === 'move' ? 'Brevha · Move' : st.kind === 'skill' ? 'Brevha · Skill (5–6)' : 'Brevha · Attack',
+    skin: st.skin, throwFx: st.fx, area, speed: st.speed, ...over });
+  const shown = window.lastShown = tray.debugTopFaces();
+  const ok = st.speed < 0.05 || shown.join() === v.join();
+  out.textContent = `wanted ${v.join(' ')} · shown ${shown.join(' ')} · ${ok ? 'OK' : 'MISMATCH'} · ${Math.round(performance.now() - t0)}ms · ${JSON.stringify(tray.lastStats || {})}`;
+  return { wanted: v, shown, ok, ms: performance.now() - t0, res };
+}
+window.roll = roll;
+window.st = st;
+document.getElementById('roll').onclick = () => roll();
+window.addEventListener('keydown', (e) => { if (e.key === 'r' && tray.state === 'idle') roll(); });
+
+// Planner-only check: thousands of random value sets without rendering.
+window.verify = (count = 400) => {
+  let bad = 0; let att = 0;
+  const trays = [{ hx: 3.4, zFar: -2.8, zNear: 2.8 }, { hx: 2.6, zFar: -2.25, zNear: 2.25 }, { hx: 1.9, zFar: -1.7, zNear: 1.7 }];
+  for (let i = 0; i < count; i++) {
+    const n = 1 + (i % 6);
+    const v = i % 7 === 0 ? Array(n).fill(6) : Array.from({ length: n }, () => 1 + Math.floor(Math.random() * 6));
+    const a = Math.random() * 6.283;
+    const p = planRoll({ values: v, tray: trays[i % 3], spec: { dir: [Math.cos(a), Math.sin(a)], power: Math.random() } });
+    const L = p.frames[p.frames.length - 1];
+    const got = v.map((_, k) => readTop(new THREE.Quaternion(L[k * 7 + 3], L[k * 7 + 4], L[k * 7 + 5], L[k * 7 + 6]), p.layouts[k]));
+    if (got.join() !== v.join()) bad++;
+    att += p.attempts;
+  }
+  return { count, bad, avgAttempts: att / count };
+};
+document.getElementById('v').onclick = () => { const r = window.verify(300); document.getElementById('stat').textContent = `planner: ${r.bad} bad / ${r.count}`; };
+if (q.has('auto')) roll();
+</script>
+</body>
+</html>

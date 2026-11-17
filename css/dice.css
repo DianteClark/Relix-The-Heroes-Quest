@@ -1,0 +1,82 @@
+/* Relix 3D dice tray (js/dice3d.js). Owner: Dice. */
+.dice-tray { position: fixed; inset: 0; z-index: 40; pointer-events: none; opacity: 1; transition: opacity .24s ease; contain: strict; }
+.dice-tray.out { opacity: 0; }
+.dice-tray.waiting, .dice-tray.human { pointer-events: auto; touch-action: none; -webkit-user-select: none; user-select: none; -webkit-touch-callout: none; }
+.dice-tray.waiting { cursor: grab; }
+.dice-tray.waiting:active { cursor: grabbing; }
+.dice-canvas { position: absolute; inset: 0; width: 100%; height: 100%; display: block; }
+.dice-layer { position: absolute; inset: 0; pointer-events: none; }
+.dice-safe { position: absolute; left: 0; bottom: 0; width: 1px; height: env(safe-area-inset-bottom, 0px); visibility: hidden; pointer-events: none; }
+
+/* soft vignette while waiting for the throw: focuses the eye on the dice without hiding the game */
+.dice-tray::before { content: ''; position: absolute; inset: 0; pointer-events: none; opacity: 0; transition: opacity .3s;
+  background: radial-gradient(ellipse 90% 60% at 50% 100%, rgba(10,4,18,.55) 0%, rgba(10,4,18,.18) 55%, rgba(10,4,18,0) 80%); }
+.dice-tray.waiting::before { opacity: 1; }
+
+/* roll label ("Arin · Attack") */
+.dice-title { position: absolute; transform: translateX(-50%); white-space: nowrap; max-width: 92vw; overflow: hidden; text-overflow: ellipsis;
+  font-family: 'Luckiest Guy', 'Lilita One', system-ui, sans-serif; font-size: 17px; letter-spacing: .6px; color: #fff;
+  padding: 5px 16px 3px; border-radius: 999px; background: linear-gradient(rgba(42,34,56,.88), rgba(22,18,31,.88));
+  box-shadow: 0 0 0 1.5px rgba(242,196,67,.55), 0 6px 18px rgba(0,0,0,.45); text-shadow: 0 2px 0 rgba(0,0,0,.5);
+  animation: dice-title-in .35s cubic-bezier(.2,1.4,.4,1) both; }
+@keyframes dice-title-in { from { opacity: 0; transform: translate(-50%, -8px) scale(.9); } }
+
+/* swipe prompt */
+.dice-prompt { position: absolute; left: 50%; transform: translateX(-50%); text-align: center; pointer-events: none; opacity: 0; transition: opacity .25s; width: max-content; }
+.dice-prompt.show { opacity: 1; }
+.dice-prompt-text { font-family: 'Luckiest Guy', 'Lilita One', system-ui, sans-serif; font-size: 26px; letter-spacing: 1.5px; color: #f2c443;
+  text-shadow: 0 3px 0 #8a5a0a, 0 6px 16px rgba(0,0,0,.75), 0 0 24px rgba(242,196,67,.35); animation: dice-breathe 1.6s ease-in-out infinite; }
+.dice-prompt-sub { margin-top: 2px; font: 800 13px 'Nunito', system-ui, sans-serif; color: #e9dcff; opacity: .85; text-shadow: 0 1px 4px #000; }
+@keyframes dice-breathe { 50% { transform: scale(1.06); } }
+
+/* animated hand: starts on the dice and flicks upward */
+.dice-hint { position: absolute; left: 50%; top: calc(-1 * var(--hand-dy, 60px)); width: 0; height: 0; }
+.dh-finger { position: absolute; left: -2px; top: 0; width: 46px; height: 46px; margin: -6px 0 0 -6px;
+  background: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Cpath d='M24 31V9a5.5 5.5 0 0 1 11 0v16l12.5 3a6.5 6.5 0 0 1 4.8 7.4L49.5 52A8 8 0 0 1 41.6 59H31a8.5 8.5 0 0 1-6.8-3.4L12.6 40.3a4.8 4.8 0 0 1 7.6-5.9z' fill='%23fff7e6' stroke='%232a1f38' stroke-width='3.2' stroke-linejoin='round'/%3E%3C/svg%3E") center / contain no-repeat;
+  filter: drop-shadow(0 4px 6px rgba(0,0,0,.55)); animation: dice-flick 1.9s cubic-bezier(.5,0,.2,1) infinite; }
+.dh-trail { position: absolute; left: -3px; top: -80px; width: 6px; height: 86px; border-radius: 6px;
+  background: linear-gradient(to top, rgba(242,196,67,0), rgba(242,196,67,.95)); transform-origin: 50% 100%;
+  animation: dice-trail 1.9s cubic-bezier(.5,0,.2,1) infinite; }
+.dh-chev { position: absolute; left: -11px; width: 22px; height: 22px; border: solid #f2c443; border-width: 4px 0 0 4px; transform: rotate(45deg);
+  filter: drop-shadow(0 0 6px rgba(242,196,67,.8)); opacity: 0; animation: dice-chev 1.9s ease-out infinite; }
+.dh-chev:nth-of-type(3) { top: -132px; animation-delay: .5s; }
+.dh-chev:nth-of-type(4) { top: -112px; animation-delay: .62s; }
+@keyframes dice-flick {
+  0% { transform: translate(0, 18px) scale(1); opacity: 0; }
+  12% { opacity: 1; transform: translate(0, 14px) scale(.92); }
+  28% { transform: translate(0, 14px) scale(.92); }
+  52% { transform: translate(6px, -96px) scale(1); opacity: 1; }
+  68%, 100% { transform: translate(8px, -110px) scale(1); opacity: 0; }
+}
+@keyframes dice-trail {
+  0%, 30% { transform: scaleY(0); opacity: 0; }
+  50% { transform: scaleY(1); opacity: 1; }
+  75%, 100% { transform: scaleY(1) translateY(-30px); opacity: 0; }
+}
+@keyframes dice-chev { 0%, 100% { opacity: 0; transform: translateY(8px) rotate(45deg); } 30% { opacity: 1; } 60% { opacity: 0; transform: translateY(-14px) rotate(45deg); } }
+
+/* result tags */
+.dice-tag { position: absolute; transform: translate(-50%, -100%); white-space: nowrap;
+  font-family: 'Luckiest Guy', 'Lilita One', system-ui, sans-serif; font-size: 13px; letter-spacing: .8px; line-height: 1;
+  padding: 5px 8px 3px; border-radius: 8px; color: #fff; text-shadow: 0 1px 0 rgba(0,0,0,.55);
+  box-shadow: 0 3px 0 rgba(0,0,0,.35), 0 6px 14px rgba(0,0,0,.4); animation: dice-tag-in .38s cubic-bezier(.2,1.6,.4,1) both; }
+.dice-tag.r-crit, .dice-tag.r-trigger { background: linear-gradient(#ffe27a, #e0a51c); color: #3a2208; text-shadow: 0 1px 0 rgba(255,255,255,.45);
+  box-shadow: 0 3px 0 #8a5a0a, 0 0 18px rgba(242,196,67,.7); font-size: 15px; }
+.dice-tag.r-hit { background: linear-gradient(#7ff0a2, #2fae5b); color: #0d3a1d; text-shadow: 0 1px 0 rgba(255,255,255,.4); box-shadow: 0 3px 0 #1a6a36, 0 0 12px rgba(79,209,122,.45); }
+.dice-tag.r-miss { background: linear-gradient(#ff7b7f, #c9302c); box-shadow: 0 3px 0 #6d1512, 0 6px 14px rgba(0,0,0,.4); }
+.dice-tag.r-cmiss { background: linear-gradient(#7a1020, #3a040c); color: #ffb3b3; box-shadow: 0 0 0 1.5px #e5484d, 0 3px 0 #1a0206, 0 0 14px rgba(229,72,77,.45); font-size: 11px; }
+@keyframes dice-tag-in { from { opacity: 0; transform: translate(-50%, -40%) scale(.4); } }
+
+.dice-sum { position: absolute; transform: translateX(-50%); display: flex; align-items: center; gap: 8px;
+  font-family: 'Luckiest Guy', 'Lilita One', system-ui, sans-serif; font-size: 34px; line-height: 1; color: #2a1a05;
+  padding: 7px 18px 3px 14px; border-radius: 999px; background: linear-gradient(#ffe9a0, #e9b030);
+  box-shadow: 0 4px 0 #8a5a0a, 0 0 0 2px rgba(255,255,255,.35) inset, 0 0 26px rgba(242,196,67,.55), 0 10px 22px rgba(0,0,0,.45);
+  animation: dice-tag-in .42s cubic-bezier(.2,1.6,.4,1) .08s both; }
+.dice-sum small { font-size: 13px; letter-spacing: 1px; opacity: .75; transform: translateY(-2px); }
+
+@media (prefers-reduced-motion: reduce) {
+  .dice-prompt-text, .dh-chev { animation: none; }
+  .dh-chev { opacity: .8; }
+  .dh-finger { animation-duration: 2.6s; }
+  .dice-tag, .dice-sum, .dice-title { animation-duration: .01s; }
+}
