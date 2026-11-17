@@ -44,6 +44,7 @@ export const LAYOUTS = (() => {
 
 const _v = new THREE.Vector3();
 const _q = new THREE.Quaternion();
+const _m4 = new THREE.Matrix4();
 const UP = new THREE.Vector3(0, 1, 0);
 
 /** Index of the box slot (0..5) whose normal points most upward for quaternion q. */
@@ -373,77 +374,74 @@ const col = (hex) => new THREE.Color(hex);
 const css = (c, a = 1) => `rgba(${Math.round(c.r * 255)},${Math.round(c.g * 255)},${Math.round(c.b * 255)},${a})`;
 const mix = (a, b, t) => a.clone().lerp(b, t);
 
+const INK = '#160d22';
+// Cel-shaded face: flat body color, a darker bevel band in the edge color, a thin ink
+// line along the very edge (adjacent faces' lines meet on the bevel and read as an
+// inked edge), flat pips with an ink ring, and a painted highlight for shiny finishes.
 function faceTextures(skin, value) {
   const body = col(skin.body); const edge = col(skin.edge); const pip = col(skin.pip);
   const S = TEX; const band = BEVEL * S;
   const glow = skin.finish === 'glow';
-  // --- albedo
+  const white = new THREE.Color('#ffffff'); const black = new THREE.Color('#000000');
   const c = mkCanvas(); const x = c.getContext('2d');
-  x.fillStyle = css(edge); x.fillRect(0, 0, S, S);
-  const steps = Math.ceil(band);
-  for (let i = 0; i <= steps; i++) {
-    const t = i / steps; // 0 = outer edge, 1 = face
-    x.fillStyle = css(mix(edge, body, Math.min(1, t * 1.15) ** 0.7));
-    x.fillRect(i, i, S - 2 * i, S - 2 * i);
-  }
-  const g = x.createRadialGradient(S * 0.45, S * 0.4, S * 0.05, S / 2, S / 2, S * 0.62);
-  g.addColorStop(0, css(mix(body, new THREE.Color('#ffffff'), 0.08)));
-  g.addColorStop(1, css(body, 0));
-  x.fillStyle = g; x.fillRect(band, band, S - 2 * band, S - 2 * band);
-  if (skin.finish === 'matte') { // fine grain
-    for (let i = 0; i < 900; i++) {
-      x.fillStyle = Math.random() < 0.5 ? 'rgba(0,0,0,0.035)' : 'rgba(255,255,255,0.05)';
-      x.fillRect(Math.random() * S, Math.random() * S, 1.5, 1.5);
+  // bevel band: two flat tones, like a cel-painted chamfer
+  x.fillStyle = css(mix(edge, body, 0.35)); x.fillRect(0, 0, S, S);
+  x.fillStyle = css(mix(edge, body, 0.75)); x.fillRect(band * 0.45, band * 0.45, S - band * 0.9, S - band * 0.9);
+  x.fillStyle = css(body); x.fillRect(band * 0.85, band * 0.85, S - band * 1.7, S - band * 1.7);
+  // ink edge line
+  x.strokeStyle = INK; x.lineWidth = S * 0.05; x.strokeRect(0, 0, S, S);
+  // soft painted light: lighter upper-left of the face
+  const lg = x.createLinearGradient(0, 0, S, S);
+  lg.addColorStop(0, css(mix(body, white, 0.18), 0.9)); lg.addColorStop(0.45, css(body, 0)); lg.addColorStop(1, css(mix(body, black, 0.12), 0.5));
+  x.fillStyle = lg; x.fillRect(band * 0.85, band * 0.85, S - band * 1.7, S - band * 1.7);
+  if (skin.finish === 'matte') {
+    for (let i = 0; i < 500; i++) {
+      x.fillStyle = Math.random() < 0.5 ? 'rgba(0,0,0,0.04)' : 'rgba(255,255,255,0.05)';
+      x.fillRect(band + Math.random() * (S - 2 * band), band + Math.random() * (S - 2 * band), 2, 2);
     }
   }
-  if (skin.finish === 'metal') { // brushed
-    for (let i = 0; i < 160; i++) {
-      x.strokeStyle = Math.random() < 0.5 ? 'rgba(255,255,255,0.05)' : 'rgba(0,0,0,0.05)';
-      const yy = Math.random() * S; x.beginPath(); x.moveTo(0, yy); x.lineTo(S, yy + (Math.random() - 0.5) * 4); x.stroke();
-    }
+  if (skin.finish === 'metal') { // two bold sheen stripes
+    x.save(); x.beginPath(); x.rect(band, band, S - 2 * band, S - 2 * band); x.clip();
+    x.fillStyle = css(mix(body, white, 0.45), 0.55);
+    x.beginPath(); x.moveTo(S * 0.15, S); x.lineTo(S * 0.42, S); x.lineTo(S, S * 0.42); x.lineTo(S, S * 0.15); x.fill();
+    x.fillStyle = css(mix(body, white, 0.6), 0.45);
+    x.beginPath(); x.moveTo(S * 0.52, S); x.lineTo(S * 0.6, S); x.lineTo(S, S * 0.6); x.lineTo(S, S * 0.52); x.fill();
+    x.restore();
   }
-  const pr = (value === 1 ? 0.125 : 0.085) * S;
-  const dark = mix(body, new THREE.Color('#000000'), 0.55);
+  const pr = (value === 1 ? 0.13 : 0.09) * S;
+  const ring = mix(pip, black, 0.55).getHSL({}).l < 0.25 ? INK : css(mix(pip, black, 0.6));
   for (const [u, v] of PIPS[value]) {
     const px = u * S; const py = v * S;
-    // engraved lip: dark crescent top-left, light bottom-right
-    x.beginPath(); x.arc(px, py, pr * 1.12, 0, Math.PI * 2);
-    const lip = x.createLinearGradient(px - pr, py - pr, px + pr, py + pr);
-    lip.addColorStop(0, css(dark, 0.85)); lip.addColorStop(1, css(mix(body, new THREE.Color('#ffffff'), 0.35), 0.8));
-    x.fillStyle = lip; x.fill();
-    x.beginPath(); x.arc(px + pr * 0.04, py + pr * 0.04, pr, 0, Math.PI * 2);
-    const pg = x.createRadialGradient(px + pr * 0.25, py + pr * 0.3, pr * 0.1, px, py, pr);
-    pg.addColorStop(0, css(glow ? mix(pip, new THREE.Color('#ffffff'), 0.5) : mix(pip, new THREE.Color('#ffffff'), 0.12)));
-    pg.addColorStop(0.75, css(pip));
-    pg.addColorStop(1, css(mix(pip, new THREE.Color('#000000'), 0.45)));
-    x.fillStyle = pg; x.fill();
+    x.beginPath(); x.arc(px, py, pr * 1.18, 0, Math.PI * 2); x.fillStyle = ring; x.fill();
+    x.beginPath(); x.arc(px, py, pr, 0, Math.PI * 2); x.fillStyle = css(glow ? mix(pip, white, 0.35) : pip); x.fill();
+    // little cel shadow + shine on the pip
+    x.beginPath(); x.arc(px + pr * 0.18, py + pr * 0.18, pr * 0.78, 0, Math.PI * 2); x.fillStyle = css(mix(pip, black, 0.25), 0.45); x.fill();
+    x.beginPath(); x.arc(px - pr * 0.3, py - pr * 0.32, pr * 0.26, 0, Math.PI * 2); x.fillStyle = 'rgba(255,255,255,.55)'; x.fill();
   }
-  // --- bump (white = high)
+  if (skin.finish === 'gloss' || glow) { // painted glint in the corner
+    x.fillStyle = 'rgba(255,255,255,.75)';
+    x.beginPath(); x.ellipse(S * 0.22, S * 0.2, S * 0.07, S * 0.025, -0.75, 0, Math.PI * 2); x.fill();
+    x.beginPath(); x.arc(S * 0.31, S * 0.15, S * 0.014, 0, Math.PI * 2); x.fill();
+  }
+  // --- bump (white = high): pips are shallow dents
   const b = mkCanvas(128); const bx = b.getContext('2d');
   bx.fillStyle = '#fff'; bx.fillRect(0, 0, 128, 128);
   for (const [u, v] of PIPS[value]) {
     const r = pr / 2;
-    const bg = bx.createRadialGradient(u * 128, v * 128, r * 0.3, u * 128, v * 128, r * 1.15);
-    bg.addColorStop(0, '#000'); bg.addColorStop(0.8, '#333'); bg.addColorStop(1, '#fff');
-    bx.fillStyle = bg; bx.beginPath(); bx.arc(u * 128, v * 128, r * 1.15, 0, Math.PI * 2); bx.fill();
+    const bg = bx.createRadialGradient(u * 128, v * 128, r * 0.3, u * 128, v * 128, r * 1.1);
+    bg.addColorStop(0, '#444'); bg.addColorStop(1, '#fff');
+    bx.fillStyle = bg; bx.beginPath(); bx.arc(u * 128, v * 128, r * 1.1, 0, Math.PI * 2); bx.fill();
   }
-  // --- emissive (glow finish only)
+  // --- emissive (glow finish only): glowing pips + a faint rim
   let e = null;
   if (glow) {
     e = mkCanvas(128); const ex = e.getContext('2d');
-    ex.fillStyle = css(body.clone().multiplyScalar(0.22)); ex.fillRect(0, 0, 128, 128);
-    const eb = 128 * BEVEL;
-    const eg = ex.createLinearGradient(0, 0, 0, 128);
-    ex.strokeStyle = css(edge, 0.55); ex.lineWidth = eb * 0.6; ex.strokeRect(eb * 0.3, eb * 0.3, 128 - eb * 0.6, 128 - eb * 0.6);
-    void eg;
+    ex.fillStyle = css(body.clone().multiplyScalar(0.2)); ex.fillRect(0, 0, 128, 128);
     for (const [u, v] of PIPS[value]) {
       const r = pr / 2;
-      const gg = ex.createRadialGradient(u * 128, v * 128, 0, u * 128, v * 128, r * 1.7);
-      gg.addColorStop(0, css(mix(pip, new THREE.Color('#ffffff'), 0.4)));
-      gg.addColorStop(0.55, css(pip));
-      gg.addColorStop(1, css(pip, 0));
-      ex.fillStyle = gg; ex.beginPath(); ex.arc(u * 128, v * 128, r * 1.7, 0, Math.PI * 2); ex.fill();
+      ex.fillStyle = css(mix(pip, white, 0.3)); ex.beginPath(); ex.arc(u * 128, v * 128, r, 0, Math.PI * 2); ex.fill();
     }
+    ex.strokeStyle = '#000'; ex.lineWidth = 128 * 0.05; ex.strokeRect(0, 0, 128, 128);
   }
   const tex = (cv, srgb) => {
     const t = new THREE.CanvasTexture(cv);
@@ -454,24 +452,22 @@ function faceTextures(skin, value) {
   return { map: tex(c, true), bump: tex(b, false), emissive: e ? tex(e, true) : null };
 }
 
+// Three-band toon ramp: shadow / mid / lit. Nearest filtering keeps the bands crisp.
+let toonRamp = null;
+function toonGradient() {
+  if (toonRamp) return toonRamp;
+  const data = new Uint8Array([120, 120, 120, 255, 196, 196, 196, 255, 255, 255, 255, 255]);
+  toonRamp = new THREE.DataTexture(data, 3, 1, THREE.RGBAFormat);
+  toonRamp.minFilter = toonRamp.magFilter = THREE.NearestFilter;
+  toonRamp.generateMipmaps = false;
+  toonRamp.needsUpdate = true;
+  return toonRamp;
+}
+
 function makeFaceMaterial(skin, value) {
   const t = faceTextures(skin, value);
-  const common = { map: t.map, bumpMap: t.bump, bumpScale: 2.2 };
-  let m;
-  switch (skin.finish) {
-    case 'gloss':
-      m = new THREE.MeshPhysicalMaterial({ ...common, roughness: 0.32, metalness: 0, clearcoat: 1, clearcoatRoughness: 0.07, envMapIntensity: 1.1 });
-      break;
-    case 'metal':
-      m = new THREE.MeshStandardMaterial({ ...common, roughness: 0.26, metalness: 0.85, envMapIntensity: 2.4 });
-      break;
-    case 'glow':
-      m = new THREE.MeshPhysicalMaterial({ ...common, roughness: 0.18, metalness: 0, clearcoat: 1, clearcoatRoughness: 0.05,
-        emissive: new THREE.Color('#ffffff'), emissiveMap: t.emissive, emissiveIntensity: 1.25, envMapIntensity: 1 });
-      break;
-    default:
-      m = new THREE.MeshStandardMaterial({ ...common, roughness: 0.62, metalness: 0, envMapIntensity: 0.75 });
-  }
+  const m = new THREE.MeshToonMaterial({ map: t.map, bumpMap: t.bump, bumpScale: 1.4, gradientMap: toonGradient() });
+  if (skin.finish === 'glow') { m.emissive = new THREE.Color('#ffffff'); m.emissiveMap = t.emissive; m.emissiveIntensity = 1; }
   m.userData.value = value;
   return m;
 }
@@ -483,32 +479,6 @@ function radialTexture(stops, size = 128) {
   x.fillStyle = g; x.fillRect(0, 0, size, size);
   const t = new THREE.CanvasTexture(c); t.colorSpace = THREE.SRGBColorSpace;
   return t;
-}
-
-function buildEnvironment(renderer) {
-  const scene = new THREE.Scene();
-  const sky = new THREE.Mesh(new THREE.SphereGeometry(50, 32, 16), new THREE.ShaderMaterial({
-    side: THREE.BackSide,
-    uniforms: {},
-    vertexShader: 'varying vec3 vP; void main(){ vP = normalize(position); gl_Position = projectionMatrix*modelViewMatrix*vec4(position,1.); }',
-    fragmentShader: `varying vec3 vP; void main(){ float h = vP.y;
-      vec3 top = vec3(0.55,0.48,0.62); vec3 mid = vec3(0.16,0.11,0.22); vec3 bot = vec3(0.05,0.03,0.07);
-      vec3 c = h > 0. ? mix(mid, top, pow(h, .7)) : mix(mid, bot, pow(-h, .5));
-      gl_FragColor = vec4(c, 1.); }`,
-  }));
-  scene.add(sky);
-  const panel = (w, h, color, intensity, pos) => {
-    const m = new THREE.Mesh(new THREE.PlaneGeometry(w, h), new THREE.MeshBasicMaterial({ color: new THREE.Color(color).multiplyScalar(intensity), side: THREE.DoubleSide }));
-    m.position.set(...pos); m.lookAt(0, 0, 0); scene.add(m);
-  };
-  panel(26, 14, '#fff3dc', 3.2, [-14, 26, 16]);   // warm key softbox
-  panel(18, 30, '#b9a6ff', 1.6, [30, 8, -10]);    // cool purple rim
-  panel(30, 6, '#ffd27a', 1.4, [0, 4, 34]);       // low gold front strip
-  panel(10, 10, '#ffffff', 2.4, [8, 40, -6]);     // top
-  const pm = new THREE.PMREMGenerator(renderer);
-  const rt = pm.fromScene(scene, 0.035);
-  pm.dispose();
-  return rt.texture;
 }
 
 // ---------------------------------------------------------------------------
@@ -701,6 +671,10 @@ function injectCss() {
 }
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+const escHtml = (t) => String(t).replace(/[&<>"]/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' }[c]));
+// A tiny inked die face (CSS grid of pips) for labels.
+const MINI_PIPS = { 1: [5], 2: [1, 9], 3: [1, 5, 9], 4: [1, 3, 7, 9], 5: [1, 3, 5, 7, 9], 6: [1, 3, 4, 6, 7, 9] };
+const miniDie = (v) => `<i class="mini-die">${Array.from({ length: 9 }, (_, k) => `<b${MINI_PIPS[v].includes(k + 1) ? ' class="on"' : ''}></b>`).join('')}</i>`;
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 const sfx = (name, intensity = 1) => window.dispatchEvent(new CustomEvent('relix:sfx', { detail: { name, intensity } }));
 
@@ -751,8 +725,9 @@ export class DiceTray {
     const skinDef = typeof skin === 'object' ? skin : byId(DICE_SKINS, skin);
     const fx = THROW_FX.some((f) => f.id === throwFx) ? throwFx : 'none';
     const human = mode === 'swipe';
-    const r = { values: vals, kind, triggers, label, skin: skinDef, fx, speed, human, reduced, token };
+    const r = { values: vals, kind, triggers: triggers || [], label, skin: skinDef, fx, speed, human, reduced, token };
     this.cur = r;
+    this.reducedNow = reduced;
     let resolveFn;
     const done = new Promise((res) => { resolveFn = res; });
     this._pendingResolve = () => resolveFn(vals);
@@ -761,7 +736,7 @@ export class DiceTray {
     this.el.classList.toggle('human', human);
     this._layout(area, vals.length);
     this._setupDice(r);
-    this._setTitle(label);
+    this._setTitle(label, r);
     this.layer.innerHTML = '';
 
     let spec;
@@ -789,7 +764,7 @@ export class DiceTray {
     r.rate = clamp(plan.duration / targetSim, human ? 0.95 : 1, human ? 1.7 : 2.6);
     r.launch = human ? 0.13 : Math.max(0.08, 0.16 * Math.min(1, speed + 0.2));
     r.launchFrom = human ? this.dice.slice(0, vals.length).map((d) => d.mesh.position.clone()) : this._autoLaunchFrom(plan, spec);
-    r.evIdx = 0; r.landed = new Set(); r.lastHit = 0;
+    r.evIdx = 0; r.landed = new Set(); r.touched = new Set(); r.lastHit = 0;
     r.t0 = this._clock;
     this._state = 'play';
     sfx('dice_throw', human ? clamp(spec.power + 0.3, 0.3, 1) : 0.6);
@@ -842,13 +817,11 @@ export class DiceTray {
     const renderer = new THREE.WebGLRenderer({ canvas: this.canvas, antialias: true, alpha: true, powerPreference: 'high-performance' });
     renderer.setClearColor(0x000000, 0);
     renderer.outputColorSpace = THREE.SRGBColorSpace;
-    renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    renderer.toneMappingExposure = 1.05;
+    renderer.toneMapping = THREE.NoToneMapping;   // flat, vibrant cartoon colors
     renderer.shadowMap.enabled = true;
     renderer.shadowMap.type = THREE.PCFSoftShadowMap;
     this.renderer = renderer;
     const scene = new THREE.Scene();
-    scene.environment = buildEnvironment(renderer);
     this.scene = scene;
     this.camera = new THREE.PerspectiveCamera(30, 1, 0.5, 200);
     const pitch = THREE.MathUtils.degToRad(60);
@@ -857,21 +830,21 @@ export class DiceTray {
 
     this.root = new THREE.Group();
     scene.add(this.root);
-    scene.add(new THREE.HemisphereLight(0xfff1dc, 0x2a1838, 0.55));
-    const key = new THREE.DirectionalLight(0xfff0d8, 2.3);
+    scene.add(new THREE.HemisphereLight(0xfff6e8, 0x6a5280, 1.15));
+    const key = new THREE.DirectionalLight(0xfff4e0, 1.55);
     key.castShadow = true;
     key.shadow.mapSize.set(1024, 1024);
     key.shadow.bias = -0.0008;
     key.shadow.normalBias = 0.02;
-    key.shadow.radius = 4;
+    key.shadow.radius = 1.5;
     this.key = key;
     this.root.add(key); this.root.add(key.target);
     key.position.set(-3.5, 12, 5); key.target.position.set(0, 0, 0);
-    const rim = new THREE.DirectionalLight(0xb48cff, 1.0);
+    const rim = new THREE.DirectionalLight(0xc8b0ff, 0.45);
     rim.position.set(6, 5, -7); this.root.add(rim);
 
     // floor: shadow catcher + soft pool of light
-    this.shadowPlane = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), new THREE.ShadowMaterial({ opacity: 0.42, color: 0x0a0410 }));
+    this.shadowPlane = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), new THREE.ShadowMaterial({ opacity: 0.5, color: 0x160d22 }));
     this.shadowPlane.rotation.x = -Math.PI / 2; this.shadowPlane.receiveShadow = true;
     this.root.add(this.shadowPlane);
     this.pool = new THREE.Mesh(new THREE.PlaneGeometry(1, 1), new THREE.MeshBasicMaterial({
@@ -885,15 +858,22 @@ export class DiceTray {
     this.root.add(this.poolGlow);
 
     this.geo = roundedBoxGeometry();
+    this.inkMat = new THREE.MeshBasicMaterial({ color: 0x160d22, side: THREE.BackSide });
     this.haloTex = radialTexture([[0, 'rgba(255,255,255,0.9)'], [0.25, 'rgba(255,255,255,0.35)'], [1, 'rgba(255,255,255,0)']]);
-    this.ringTex = radialTexture([[0, 'rgba(255,255,255,0)'], [0.45, 'rgba(255,255,255,0.05)'], [0.62, 'rgba(255,255,255,0.9)'], [0.7, 'rgba(255,255,255,0.35)'], [1, 'rgba(255,255,255,0)']]);
+    // Result ring: a flat band with ink borders (the material color tints the band; the ink stays dark).
+    this.ringTex = radialTexture([[0, 'rgba(255,255,255,0)'], [0.55, 'rgba(255,255,255,0)'], [0.56, 'rgba(22,13,34,1)'], [0.61, 'rgba(22,13,34,1)'], [0.62, 'rgba(255,255,255,1)'], [0.73, 'rgba(255,255,255,1)'], [0.74, 'rgba(22,13,34,1)'], [0.79, 'rgba(22,13,34,1)'], [0.8, 'rgba(22,13,34,0)'], [1, 'rgba(0,0,0,0)']], 256);
     this.dice = [];
     for (let i = 0; i < 6; i++) {
       const mesh = new THREE.Mesh(this.geo, []);
       mesh.castShadow = true;
+      mesh.matrixAutoUpdate = false;   // composed in _syncDice() so we can squash along world Y
+      // Inverted-hull ink outline: a slightly bigger back-face shell in ink.
+      const hull = new THREE.Mesh(this.geo, this.inkMat);
+      hull.scale.setScalar(1.085); hull.castShadow = false; hull.renderOrder = 0;
+      mesh.add(hull);
       const halo = new THREE.Sprite(new THREE.SpriteMaterial({ map: this.haloTex, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, opacity: 0 }));
       halo.scale.setScalar(2.6); halo.renderOrder = 3;
-      const ring = new THREE.Mesh(new THREE.PlaneGeometry(2.4, 2.4), new THREE.MeshBasicMaterial({ map: this.ringTex, transparent: true, depthWrite: false, blending: THREE.AdditiveBlending, opacity: 0 }));
+      const ring = new THREE.Mesh(new THREE.PlaneGeometry(2.1, 2.1), new THREE.MeshBasicMaterial({ map: this.ringTex, transparent: true, depthWrite: false, opacity: 0 }));
       ring.rotation.x = -Math.PI / 2; ring.position.y = 0.02; ring.renderOrder = 1;
       mesh.visible = false; halo.visible = false; ring.visible = false;
       this.root.add(mesh); this.root.add(halo); this.root.add(ring);
@@ -988,13 +968,23 @@ export class DiceTray {
     this.promptEl.style.setProperty('--hand-dy', `${diePx * 1.2}px`);
   }
 
-  _setTitle(label) {
-    this.titleEl.textContent = label || '';
-    this.titleEl.style.display = label ? '' : 'none';
-    if (label) {
-      const top = Math.max(8 + (this.opts.safeTop || 0), this.rect.y - this.diePx * 0.9 - 30);
+  // Roll label as an ink plate. Skill checks also show the trigger numbers as tiny
+  // dice ("needs ⚃ ⚄ ⚅"); in a battle (no label) that chip shows on its own.
+  _setTitle(label, r = {}) {
+    const trig = r.kind === 'skill' ? [...new Set(r.triggers || [])].filter((v) => v >= 1 && v <= 6).sort() : [];
+    const chip = trig.length ? `<span class="dt-needs"><small>needs</small>${trig.map((v) => miniDie(v)).join('')}</span>` : '';
+    const has = !!(label || chip);
+    this.titleEl.innerHTML = has ? `${label ? `<span class="dt-txt">${escHtml(label)}</span>` : ''}${chip}` : '';
+    this.titleEl.classList.toggle('chip-only', !label && !!chip);
+    this.titleEl.classList.remove('gone');
+    this.titleEl.classList.toggle('skill', r.kind === 'skill');
+    this.titleEl.style.display = has ? '' : 'none';
+    if (has) {
+      // Chip only (in a battle): sit just inside the top of the dice area so it never
+      // covers a fighter's plate; with a label: float above the area as before.
+      const top = !label && chip ? this.rect.y + 2 : Math.max(8 + (this.opts.safeTop || 0), this.rect.y - this.diePx * 0.9 - 34);
       this.titleEl.style.top = `${top}px`;
-      this.titleEl.style.left = `${this.rect.x + this.rect.w / 2}px`;
+      this.titleEl.style.left = `${clamp(this.rect.x + this.rect.w / 2, 90, window.innerWidth - 90)}px`;
     }
   }
 
@@ -1196,8 +1186,39 @@ export class DiceTray {
       this._clockWaiters = this._clockWaiters.filter((w) => w.t > this._clock);
       due.forEach((w) => w.res());
     }
+    this._syncDice();
     this.renderer.render(this.scene, this.camera);
     this._raf = requestAnimationFrame((t) => this._frame(t));
+  }
+
+  // Compose each die's matrix, adding a squash/stretch along the floor normal
+  // (about the die's bottom) so landings and the result "chunk" read as squishy.
+  _syncDice() {
+    for (const d of this.dice) {
+      const m = d.mesh;
+      if (!m.visible) continue;
+      m.matrix.compose(m.position, m.quaternion, m.scale);
+      const k = this._squash(d);
+      if (k) {
+        const by = Math.max(0, m.position.y - 0.5 * m.scale.y);
+        _m4.makeTranslation(-m.position.x, -by, -m.position.z);
+        m.matrix.premultiply(_m4);
+        _m4.makeScale(1 + k * 0.55, 1 - k, 1 + k * 0.55);
+        m.matrix.premultiply(_m4);
+        _m4.makeTranslation(m.position.x, by, m.position.z);
+        m.matrix.premultiply(_m4);
+      }
+      m.matrixWorldNeedsUpdate = true;
+    }
+  }
+  // Damped spring: + squashes flat, - stretches tall.
+  _squash(d) {
+    const q = d.sq;
+    if (!q || this.reducedNow) return 0;
+    const t = this._clock - q.t0;
+    if (t < 0) return 0;
+    if (t > 0.7) { d.sq = null; return 0; }
+    return q.amp * Math.exp(-t * 8) * Math.cos(t * 26);
   }
 
   _updateHand(r, dt, t) {
@@ -1266,6 +1287,14 @@ export class DiceTray {
       const e = ev[r.evIdx++];
       const k = clamp(e.v / 12, 0, 1);
       if (now - r.lastHit > 0.035 && k > 0.08) { sfx('dice_hit', Number(k.toFixed(2))); r.lastHit = now; }
+      if (e.floor && k > 0.12) {
+        const d = this.dice[e.die];
+        const first = !r.touched.has(e.die);
+        r.touched.add(e.die);
+        // squash on every solid bounce, biggest on the first one
+        if (first || k > 0.35) d.sq = { t0: now, amp: clamp((first ? 0.12 : 0.06) + k * 0.22, 0.06, 0.3) };
+        if (first) this._puff(d.mesh.position, k, r);
+      }
       if (e.floor && r.fx !== 'none' && (!r.landed.has(e.die) || k > 0.55)) {
         const first = !r.landed.has(e.die);
         r.landed.add(e.die);
@@ -1276,6 +1305,23 @@ export class DiceTray {
     if (simT >= plan.duration) this._settle(r);
   }
 
+  // Cartoon dust puff where a die first hits the floor (independent of the throw FX).
+  _puff(pos, k, r) {
+    const n = Math.round((r.reduced ? 3 : 7) * (0.6 + k));
+    const c0 = C('#efe4d2'); const c1 = C('#a8957c');
+    for (let i = 0; i < n; i++) {
+      const a = (i / n) * Math.PI * 2 + rr(-0.3, 0.3); const sp = rr(1.6, 3.2);
+      this.fx.normal.emit({ p: [pos.x + Math.cos(a) * 0.35, 0.12, pos.z + Math.sin(a) * 0.35], v: [Math.cos(a) * sp, rr(0.3, 1.1), Math.sin(a) * sp], life: rr(0.35, 0.6), s0: 0.35, s1: rr(0.9, 1.3), a: 0.5, c0, c1, drag: 4.5, g: -0.5 });
+    }
+  }
+
+  // A little nudge of the whole tray when the last die settles.
+  _nudge(power = 1) {
+    if (this.reducedNow || !this.canvas.animate) return;
+    const y = 4 * power;
+    this.canvas.animate([{ transform: 'none' }, { transform: `translateY(${y}px)` }, { transform: `translateY(${-y * 0.35}px)` }, { transform: 'none' }], { duration: 200, easing: 'ease-out' });
+  }
+
   _settle(r) {
     const plan = r.plan; const P = new THREE.Vector3(); const Q = new THREE.Quaternion();
     for (let i = 0; i < r.values.length; i++) {
@@ -1283,48 +1329,85 @@ export class DiceTray {
       this.dice[i].mesh.position.copy(P); this.dice[i].mesh.quaternion.copy(Q); this.dice[i].mesh.scale.setScalar(1);
     }
     r.settleT = this._clock;
+    this._nudge(Math.min(1.2, 0.6 + r.values.length * 0.1));
     this._setState('settled');
   }
 
   _highlight(r) {
     const n = r.values.length;
     r.results = r.values.map((v) => classify(r.kind, v, r.triggers));
-    const tags = []; const tagPos = [];
-    const vw = window.innerWidth;
+    const tags = []; const tagPos = []; const chunks = [];
+    const vw = window.innerWidth; const vh = window.innerHeight;
     let minX = 1e9; let maxX = -1e9; let maxY = -1e9; let minY = 1e9;
+    const toScreen = (v3) => { const p = v3.applyMatrix4(this.root.matrixWorld).project(this.camera); return { x: (p.x + 1) / 2 * vw, y: (1 - p.y) / 2 * vh }; };
     for (let i = 0; i < n; i++) {
       const d = this.dice[i]; const res = r.results[i]; const R = RESULT[res];
       d.ring.position.set(d.mesh.position.x, 0.02, d.mesh.position.z);
       d.ring.material.color.set(R.color);
       d.ring.visible = res !== 'dim';
       d.res = res;
-      const top = d.mesh.position.clone().add(new THREE.Vector3(0, 0.6, 0)).applyMatrix4(this.root.matrixWorld).project(this.camera);
-      const sx = (top.x + 1) / 2 * vw; const sy = (1 - top.y) / 2 * window.innerHeight;
-      minX = Math.min(minX, sx); maxX = Math.max(maxX, sx); minY = Math.min(minY, sy);
-      const bot = d.mesh.position.clone().add(new THREE.Vector3(0, 0, 0.6)).applyMatrix4(this.root.matrixWorld).project(this.camera);
-      maxY = Math.max(maxY, (1 - bot.y) / 2 * window.innerHeight);
-      if (R.label) tagPos.push({ sx, sy: sy - this.diePx * 0.42, res, label: R.label, i, w: R.label.length * 9 + 18 });
+      const top = toScreen(d.mesh.position.clone().add(new THREE.Vector3(0, 0.6, 0)));
+      const mid = toScreen(d.mesh.position.clone());
+      minX = Math.min(minX, top.x); maxX = Math.max(maxX, top.x); minY = Math.min(minY, top.y);
+      maxY = Math.max(maxY, toScreen(d.mesh.position.clone().add(new THREE.Vector3(0, 0, 0.6))).y);
+      if (R.label) tagPos.push({ sx: top.x, sy: top.y - this.diePx * 0.42, res, label: R.label, i, w: R.label.length * 10 + 22 });
       if (res === 'crit' || res === 'trigger') emitCritBurst(this.fx, d.mesh.position, R.color);
+      // the "chunk": stretch up then squash, plus an ink ring stamped around the die
+      d.sq = { t0: this._clock + i * 0.045, amp: res === 'dim' ? -0.06 : -0.2 };
+      if (res !== 'dim') chunks.push(`<i class="dice-chunk r-${res}" style="left:${mid.x.toFixed(1)}px;top:${mid.y.toFixed(1)}px;--s:${(this.diePx * 1.7).toFixed(0)}px;animation-delay:${i * 45}ms"></i>`);
     }
-    // per-die tags, unless they would overlap (many small dice): then one summary row instead
-    const overlap = tagPos.some((a, i) => tagPos.some((b, j) => j > i && Math.abs(a.sx - b.sx) < (a.w + b.w) / 2 + 2 && Math.abs(a.sy - b.sy) < 22));
+    // per-die stickers, unless they would overlap (many small dice): then one summary row
+    const overlap = tagPos.some((a, i) => tagPos.some((b, j) => j > i && Math.abs(a.sx - b.sx) < (a.w + b.w) / 2 + 2 && Math.abs(a.sy - b.sy) < 24));
     if (!overlap) {
-      for (const t of tagPos) tags.push(`<div class="dice-tag r-${t.res}" style="left:${t.sx.toFixed(1)}px;top:${t.sy.toFixed(1)}px;animation-delay:${t.i * 40}ms">${t.label}</div>`);
+      for (const t of tagPos) tags.push(`<div class="dice-tag r-${t.res}" style="left:${clamp(t.sx, t.w / 2 + 4, vw - t.w / 2 - 4).toFixed(1)}px;top:${t.sy.toFixed(1)}px;--rot:${((t.i % 2 ? 1 : -1) * (2 + (t.i % 3))).toFixed(0)}deg;animation-delay:${t.i * 45}ms">${t.label}</div>`);
     } else {
       const order = ['crit', 'trigger', 'hit', 'miss', 'cmiss'];
       const counts = {}; tagPos.forEach((t) => { counts[t.res] = (counts[t.res] || 0) + 1; });
-      const parts = order.filter((k) => counts[k]).map((k) => `<span class="dice-tag r-${k}">${counts[k] > 1 ? `${counts[k]}× ` : ''}${RESULT[k].label}</span>`);
-      const y = Math.min(window.innerHeight - 60 - this.safeB, maxY + 10);
-      tags.push(`<div class="dice-summary" style="left:${clamp((minX + maxX) / 2, 120, vw - 120).toFixed(1)}px;top:${y.toFixed(1)}px">${parts.join('')}</div>`);
-      maxY = y + 30;
+      const parts = order.filter((k) => counts[k]).map((k, j) => `<span class="dice-tag r-${k}" style="--rot:${j % 2 ? 2 : -2}deg;animation-delay:${j * 60}ms">${counts[k] > 1 ? `${counts[k]}× ` : ''}${RESULT[k].label}</span>`);
+      const y = Math.min(vh - 60 - this.safeB, maxY + 10);
+      tags.push(`<div class="dice-summary" style="left:${clamp((minX + maxX) / 2, 130, vw - 130).toFixed(1)}px;top:${y.toFixed(1)}px">${parts.join('')}</div>`);
+      maxY = y + 32;
     }
+    const below = (h) => Math.min(vh - h - this.safeB, maxY + 14);
+    const midX = (half) => clamp((minX + maxX) / 2, half, vw - half);
     if (r.kind === 'move' || r.kind === 'pvp') {
       const sum = r.values.reduce((a, b) => a + b, 0);
-      const y = Math.min(window.innerHeight - 70 - this.safeB, maxY + 14);
-      tags.push(`<div class="dice-sum" style="left:${clamp((minX + maxX) / 2, 70, vw - 70).toFixed(1)}px;top:${y.toFixed(1)}px"><small>${r.kind === 'move' ? 'MOVE' : 'TOTAL'}</small>${sum}</div>`);
+      tags.push(`<div class="dice-sum" style="left:${midX(80).toFixed(1)}px;top:${below(70).toFixed(1)}px"><small>${r.kind === 'move' ? 'MOVE' : 'TOTAL'}</small><b>${sum}</b></div>`);
     }
-    this.layer.innerHTML = tags.join('');
+    if (r.kind === 'skill') {
+      const ok = r.results.includes('trigger');
+      tags.push(`<div class="dice-verdict ${ok ? 'ok' : 'no'}" style="left:${midX(110).toFixed(1)}px;top:${below(70).toFixed(1)}px">${ok ? 'Skill!' : 'No skill'}</div>`);
+      if (ok) this._skillBurst(r); else this._fizzle(r);
+      sfx(ok ? 'crit' : 'miss', ok ? 0.6 : 0.35);
+    }
+    this.layer.innerHTML = chunks.join('') + tags.join('');
+    // In a battle the "needs" chip sits inside the dice area: step aside for the results.
+    this.titleEl.classList.toggle('gone', this.titleEl.classList.contains('chip-only'));
     this.el.classList.toggle('human', r.human);
+  }
+
+  // Skill success: a gold fountain + ring over each triggering die.
+  _skillBurst(r) {
+    const gold = C('#ffd23f'); const white = C('#ffffff');
+    r.results.forEach((res, i) => {
+      if (res !== 'trigger') return;
+      const p = this.dice[i].mesh.position;
+      const m = r.reduced ? 8 : 26;
+      for (let k = 0; k < m; k++) {
+        const a = rr(0, Math.PI * 2); const sp = rr(1.2, 4);
+        this.fx.add.emit({ p: [p.x, 0.8, p.z], v: [Math.cos(a) * sp, rr(3, 7), Math.sin(a) * sp], life: rr(0.6, 1), s0: rr(0.25, 0.4), s1: 0.05, c0: white, c1: gold, g: 9, drag: 1.2, shape: 1, spin: rr(-5, 5), twinkle: 16 });
+      }
+      this.fx.add.emit({ p: [p.x, 0.6, p.z], v: [0, 0, 0], life: 0.35, s0: 1.4, s1: 3.2, a: 0.7, c0: C('#fff3b0'), c1: gold, drag: 0 });
+    });
+  }
+  // Skill failure: dice exhale a grey puff and a couple of dying sparks.
+  _fizzle(r) {
+    const g0 = C('#b7b0c2'); const g1 = C('#5a5566');
+    for (let i = 0; i < r.values.length; i++) {
+      const p = this.dice[i].mesh.position;
+      for (let k = 0; k < (r.reduced ? 2 : 5); k++) this.fx.normal.emit({ p: [p.x + rr(-0.3, 0.3), 0.9, p.z + rr(-0.3, 0.3)], v: [rr(-0.4, 0.4), rr(0.8, 1.6), rr(-0.4, 0.4)], life: rr(0.7, 1.1), s0: 0.35, s1: rr(1, 1.5), a: 0.45, c0: g0, c1: g1, drag: 1.5, g: -0.4 });
+      if (!r.reduced) for (let k = 0; k < 3; k++) this.fx.add.emit({ p: [p.x, 0.9, p.z], v: [rr(-1, 1), rr(1, 2.4), rr(-1, 1)], life: rr(0.25, 0.4), s0: 0.12, s1: 0.02, a: 0.8, c0: C('#ffffff'), c1: g1, g: 6, drag: 1 });
+    }
   }
 
   _updateSettled(r, dt, now) {
@@ -1333,9 +1416,9 @@ export class DiceTray {
     for (let i = 0; i < r.values.length; i++) {
       const d = this.dice[i]; const res = d.res;
       if (!res) continue;
-      d.ring.material.opacity = (res === 'neutral' ? 0.45 : 0.85) * e * (0.85 + 0.15 * Math.sin(now * 6 + i));
+      d.ring.material.opacity = (res === 'neutral' ? 0.7 : 0.95) * e;
       d.ring.scale.setScalar(0.7 + 0.3 * e);
-      const pop = t < 0.25 ? 1 + 0.12 * Math.sin((t / 0.25) * Math.PI) : 1;
+      const pop = t < 0.22 && res !== 'dim' ? 1 + 0.08 * Math.sin((t / 0.22) * Math.PI) : 1;
       d.mesh.scale.setScalar(pop);
       for (const m of d.mats) {
         if (res === 'dim') {
